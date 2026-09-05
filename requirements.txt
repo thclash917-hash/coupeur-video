@@ -4,3 +4,4 @@ pydantic
 static-ffmpeg
 requests
 python-multipart
+openai-whisper
