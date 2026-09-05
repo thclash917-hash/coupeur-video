@@ -33,7 +33,7 @@ async def cut_video(
     end_min: int = Form(10),
     aspect_ratio: str = Form("original"),
     quality: str = Form("original"),
-    add_subs: str = Form("false"),  # Gardé en paramètre pour éviter l'erreur si ton HTML l'envoie encore
+    add_subs: str = Form("false"),
 ):
     # 1. Génération de l'ID unique en premier pour isoler chaque appareil
     unique_id = str(uuid.uuid4())[:8]
@@ -60,7 +60,7 @@ async def cut_video(
 
     vf_arg = ",".join(filter_chains) if filter_chains else None
 
-    # 3. Découpage des extraits en boucle selon max_clips (preset ultrafast pour une vitesse maximale)
+    # 3. Découpage des extraits en boucle selon max_clips (avec -nostdin et -ss après -i)
     start_sec = start_min * 60
     output_files = []
 
@@ -69,12 +69,17 @@ async def cut_video(
         output_filename = f"extrait_{i}_{unique_id}.mp4"
         output_filepath = os.path.join(output_dir, output_filename)
 
-        cmd = ["ffmpeg", "-y", "-ss", str(current_start_sec), "-i", input_path, "-t", str(segment_duration)]
+        cmd = [
+            "ffmpeg", "-y",
+            "-nostdin",
+            "-i", input_path,
+            "-ss", str(current_start_sec),
+            "-t", str(segment_duration)
+        ]
         
         if vf_arg:
             cmd.extend(["-vf", vf_arg])
         
-        # Ajout de "-r", "30" pour bloquer le framerate et empêcher l'explosion des frames
         cmd.extend(["-r", "30", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", output_filepath])
 
         try:
