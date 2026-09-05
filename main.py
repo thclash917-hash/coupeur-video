@@ -596,4 +596,3 @@ return {
     "status": "Nettoyage terminé.",
     "jobs_supprimes": deleted
 }
-```
