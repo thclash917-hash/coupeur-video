@@ -85,14 +85,13 @@ def cut_video(data: VideoRequest, background_tasks: BackgroundTasks):
     # 1. Normalisation de l'URL
     clean_url = normalize_youtube_url(data.url)
 
-    # 2. Récupération du flux vidéo via Cobalt (avec instance de secours)
+    # 2. Liste d'instances Cobalt valides
     cobalt_instances = [
         "https://api.cobalt.tools/",
-        "https://cobalt-api.kwiatek.xyz/"
+        "https://co.wuk.sh/"
     ]
 
     direct_stream_url = None
-    last_error = ""
 
     headers = {
         "Accept": "application/json",
@@ -106,24 +105,20 @@ def cut_video(data: VideoRequest, background_tasks: BackgroundTasks):
 
     for instance in cobalt_instances:
         try:
-            response = requests.post(instance, json=payload, headers=headers, timeout=12)
-            res_data = response.json()
-
-            if response.status_code == 200 and "url" in res_data:
-                direct_stream_url = res_data["url"]
-                break
-            elif "text" in res_data:
-                last_error = res_data["text"]
-            elif "error" in res_data and "code" in res_data["error"]:
-                last_error = res_data["error"]["code"]
-        except Exception as e:
-            last_error = str(e)
+            response = requests.post(instance, json=payload, headers=headers, timeout=10)
+            if response.status_code == 200:
+                res_data = response.json()
+                if "url" in res_data:
+                    direct_stream_url = res_data["url"]
+                    break
+        except Exception:
+            # Passe silencieusement à l'instance suivante si le serveur est indisponible
             continue
 
     if not direct_stream_url:
         raise HTTPException(
             status_code=400,
-            detail=f"Erreur lors de l'extraction vidéo : {last_error if last_error else 'Lien invalide ou indisponible'}"
+            detail="Impossible de récupérer le flux vidéo. Le service est temporairement indisponible."
         )
 
     # 3. Découpage avec FFmpeg
