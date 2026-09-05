@@ -3,7 +3,7 @@ import subprocess
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-import whisper
+from groq import Groq
 import zipfile
 
 app = FastAPI()
@@ -17,10 +17,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Charger le modèle Whisper au démarrage ("base" est un bon compromis rapidité/précision)
-print("Chargement du modèle Whisper...")
-model = whisper.load_model("tiny")
-print("Modèle Whisper chargé avec succès !")
+# Initialisation du client Groq (la clé API est lue depuis les variables d'environnement de Render)
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 def format_time(seconds):
     """Convertit des secondes en format SRT (HH:MM:SS,mmm)"""
@@ -50,24 +48,34 @@ async def cut_video(
         buffer.write(await file.read())
 
     srt_path = None
-    # 2. Si add_subs == "true", générer les sous-titres avec Whisper
+    # 2. Si add_subs == "true", générer les sous-titres via l'API Groq (Whisper)
     if add_subs == "true":
         audio_path = "temp_audio.mp3"
         try:
-            # Extraire l'audio pour Whisper
+            # Extraire l'audio pour Groq
             subprocess.run(["ffmpeg", "-y", "-i", input_path, "-q:a", "0", "-map", "a", audio_path], check=True)
             
-            # Transcription avec Whisper
-            result = model.transcribe(audio_path)
+            # Transcription ultra-rapide avec l'API Groq
+            with open(audio_path, "rb") as audio_file:
+                transcription = client.audio.transcriptions.create(
+                    file=(audio_path, audio_file.read()),
+                    model="whisper-large-v3",
+                    response_format="verbose_json"
+                )
             
             # Créer un fichier de sous-titres .srt valide
             srt_path = "temp_subtitles.srt"
             with open(srt_path, "w", encoding="utf-8") as srt_file:
-                for i, segment in enumerate(result["segments"], start=1):
-                    start_str = format_time(segment["start"])
-                    end_str = format_time(segment["end"])
-                    text = segment["text"].strip()
-                    srt_file.write(f"{i}\n{start_str} --> {end_str}\n{text}\n\n")
+                segments = getattr(transcription, "segments", [])
+                for i, segment in enumerate(segments, start=1):
+                    start = segment.start if hasattr(segment, "start") else segment["start"]
+                    end = segment.end if hasattr(segment, "end") else segment["end"]
+                    text = segment.text if hasattr(segment, "text") else segment["text"]
+                    
+                    start_str = format_time(start)
+                    end_str = format_time(end)
+                    clean_text = text.strip()
+                    srt_file.write(f"{i}\n{start_str} --> {end_str}\n{clean_text}\n\n")
         except Exception as e:
             print(f"Erreur lors de la génération des sous-titres : {e}")
         finally:
@@ -79,7 +87,6 @@ async def cut_video(
 
     # Gestion du format d'image (Crop 9:16 si demandé)
     if aspect_ratio == "9:16":
-        # Centre la vidéo en rognant pour obtenir du 9:16
         filter_chains.append("crop=in_h*9/16:in_h:(in_w-in_h*9/16)/2:0")
 
     # Gestion de la qualité / résolution
@@ -92,19 +99,16 @@ async def cut_video(
 
     # Incrustation des sous-titres si le fichier .srt existe
     if srt_path and os.path.exists(srt_path):
-        # Attention sous Windows/Linux avec les chemins absolus/relatifs pour le filtre subtitles de ffmpeg
         abs_srt_path = os.path.abspath(srt_path).replace("\\", "/")
-        # Style personnalisable pour les sous-titres (Police blanche, contour noir, centrés)
         sub_filter = f"subtitles='{abs_srt_path}':force_style='FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2'"
         filter_chains.append(sub_filter)
 
     # Construction de la chaîne de filtres globale (-vf)
     vf_arg = ",".join(filter_chains) if filter_chains else None
 
-    # 4. Simulation / Découpage basique d'un extrait (à adapter selon ta logique de découpage globale)
-    # Exemple pour un extrait basé sur start_min en secondes :
+    # 4. Découpage de l'extrait
     start_time_sec = start_min * 60
-    output_filename = f"extrait_1.mp4"
+    output_filename = "extrait_1.mp4"
     output_filepath = os.path.join(output_dir, output_filename)
 
     cmd = ["ffmpeg", "-y", "-ss", str(start_time_sec), "-i", input_path, "-t", str(segment_duration)]
@@ -112,7 +116,6 @@ async def cut_video(
     if vf_arg:
         cmd.extend(["-vf", vf_arg])
     
-    # Encodage standard rapide
     cmd.extend(["-c:v", "libx264", "-preset", "fast", "-c:a", "aac", output_filepath])
 
     try:
@@ -120,7 +123,7 @@ async def cut_video(
     except subprocess.CalledProcessError as e:
         print(f"Erreur FFmpeg : {e}")
 
-    # 5. Compresser le(s) résultat(s) en ZIP
+    # 5. Compresser le résultat en ZIP
     zip_filename = "extraits_shorts.zip"
     zip_path = os.path.join(output_dir, zip_filename)
     with zipfile.ZipFile(zip_path, 'w') as zipf:
