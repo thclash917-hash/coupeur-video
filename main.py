@@ -1,133 +1,137 @@
 import os
-import zipfile
-import shutil
 import subprocess
-import json
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+import whisper
+import zipfile
 
 app = FastAPI()
 
+# Configuration CORS pour autoriser ton interface front-end
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # À restreindre en production si besoin
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-def get_video_duration(input_path):
-    cmd = [
-        "ffprobe", "-v", "quiet",
-        "-print_format", "json",
-        "-show_format", input_path
-    ]
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    data = json.loads(result.stdout)
-    return float(data["format"]["duration"])
+# Charger le modèle Whisper au démarrage ("base" est un bon compromis rapidité/précision)
+print("Chargement du modèle Whisper...")
+model = whisper.load_model("base")
+print("Modèle Whisper chargé avec succès !")
+
+def format_time(seconds):
+    """Convertit des secondes en format SRT (HH:MM:SS,mmm)"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    milliseconds = int((seconds - int(seconds)) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
 
 @app.post("/cut")
 async def cut_video(
     file: UploadFile = File(...),
-    segment_duration: int = Form(...),
-    max_clips: int = Form(...),
-    start_min: int = Form(...),
-    end_min: int = Form(...),
+    segment_duration: int = Form(30),
+    max_clips: int = Form(1),
+    start_min: int = Form(0),
+    end_min: int = Form(10),
     aspect_ratio: str = Form("original"),
-    quality: str = Form("original")
+    quality: str = Form("original"),
+    add_subs: str = Form("false"),  # Reçoit "true" ou "false"
 ):
-    temp_dir = "temp_clips"
+    input_path = f"temp_{file.filename}"
+    output_dir = "output_clips"
+    os.makedirs(output_dir, exist_ok=True)
     
-    if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)
-    os.makedirs(temp_dir, exist_ok=True)
-    
-    input_path = os.path.join(temp_dir, file.filename)
-    with open(input_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    # 1. Sauvegarder la vidéo reçue temporairement
+    with open(input_path, "wb") as buffer:
+        buffer.write(await file.read())
 
-    actual_video_duration = get_video_duration(input_path)
+    srt_path = None
+    # 2. Si add_subs == "true", générer les sous-titres avec Whisper
+    if add_subs == "true":
+        audio_path = "temp_audio.mp3"
+        try:
+            # Extraire l'audio pour Whisper
+            subprocess.run(["ffmpeg", "-y", "-i", input_path, "-q:a", "0", "-map", "a", audio_path], check=True)
+            
+            # Transcription avec Whisper
+            result = model.transcribe(audio_path)
+            
+            # Créer un fichier de sous-titres .srt valide
+            srt_path = "temp_subtitles.srt"
+            with open(srt_path, "w", encoding="utf-8") as srt_file:
+                for i, segment in enumerate(result["segments"], start=1):
+                    start_str = format_time(segment["start"])
+                    end_str = format_time(segment["end"])
+                    text = segment["text"].strip()
+                    srt_file.write(f"{i}\n{start_str} --> {end_str}\n{text}\n\n")
+        except Exception as e:
+            print(f"Erreur lors de la génération des sous-titres : {e}")
+        finally:
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
 
-    start_sec = start_min * 60
-    end_sec = min(end_min * 60, actual_video_duration)
-    total_available_time = end_sec - start_sec
+    # 3. Préparation des filtres FFmpeg (Format 9:16, Qualité et Sous-titres)
+    filter_chains = []
 
-    if total_available_time <= 0 or start_sec >= actual_video_duration:
-        shutil.rmtree(temp_dir)
-        raise HTTPException(status_code=400, detail="La plage demandée dépasse la durée réelle de la vidéo.")
-
-    if max_clips > 1:
-        step = (total_available_time - segment_duration) / (max_clips - 1)
-        step = max(step, segment_duration)
-    else:
-        step = 0
-
-    generated_files = []
-
-    # Construction des filtres vidéo (format 9:16 et Résolution)
-    vf_filters = []
-
+    # Gestion du format d'image (Crop 9:16 si demandé)
     if aspect_ratio == "9:16":
-        # Format vertical Shorts/Reels (Recadrage centré)
-        vf_filters.append("crop=ih*(9/16):ih")
+        # Centre la vidéo en rognant pour obtenir du 9:16
+        filter_chains.append("crop=in_h*9/16:in_h:(in_w-in_h*9/16)/2:0")
 
-    # Gestion de la résolution
+    # Gestion de la qualité / résolution
     if quality == "720p":
-        vf_filters.append("scale=-2:720")
+        filter_chains.append("scale=-2:720")
     elif quality == "1080p":
-        vf_filters.append("scale=-2:1080")
+        filter_chains.append("scale=-2:1080")
     elif quality == "4k":
-        vf_filters.append("scale=-2:2160")
+        filter_chains.append("scale=-2:2160")
 
-    is_custom = len(vf_filters) > 0
+    # Incrustation des sous-titres si le fichier .srt existe
+    if srt_path and os.path.exists(srt_path):
+        # Attention sous Windows/Linux avec les chemins absolus/relatifs pour le filtre subtitles de ffmpeg
+        abs_srt_path = os.path.abspath(srt_path).replace("\\", "/")
+        # Style personnalisable pour les sous-titres (Police blanche, contour noir, centrés)
+        sub_filter = f"subtitles='{abs_srt_path}':force_style='FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2'"
+        filter_chains.append(sub_filter)
 
-    for i in range(max_clips):
-        clip_start = start_sec + (i * step)
-        
-        if clip_start + segment_duration > actual_video_duration:
-            break
+    # Construction de la chaîne de filtres globale (-vf)
+    vf_arg = ",".join(filter_chains) if filter_chains else None
 
-        output_filename = f"extrait_{i+1}.mp4"
-        output_path = os.path.join(temp_dir, output_filename)
+    # 4. Simulation / Découpage basique d'un extrait (à adapter selon ta logique de découpage globale)
+    # Exemple pour un extrait basé sur start_min en secondes :
+    start_time_sec = start_min * 60
+    output_filename = f"extrait_1.mp4"
+    output_filepath = os.path.join(output_dir, output_filename)
 
-        if not is_custom:
-            # Sans ré-encodage : Ultra rapide + Qualité identique à l'originale
-            cmd = [
-                "ffmpeg", "-y",
-                "-ss", str(int(clip_start)),
-                "-i", input_path,
-                "-t", str(segment_duration),
-                "-c", "copy",
-                output_path
-            ]
-        else:
-            # Ré-encodage nécessaire pour appliquer les filtres (Format/Résolution)
-            cmd = [
-                "ffmpeg", "-y",
-                "-ss", str(int(clip_start)),
-                "-i", input_path,
-                "-t", str(segment_duration),
-                "-vf", ",".join(vf_filters),
-                "-c:v", "libx264",
-                "-preset", "ultrafast",
-                "-crf", "18",  # Qualité visuelle élevée
-                "-c:a", "aac",
-                output_path
-            ]
-        
-        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        
-        if os.path.exists(output_path) and os.path.getsize(output_path) > 50000:
-            generated_files.append(output_path)
+    cmd = ["ffmpeg", "-y", "-ss", str(start_time_sec), "-i", input_path, "-t", str(segment_duration)]
+    
+    if vf_arg:
+        cmd.extend(["-vf", vf_arg])
+    
+    # Encodage standard rapide
+    cmd.extend(["-c:v", "libx264", "-preset", "fast", "-c:a", "aac", output_filepath])
 
-    if not generated_files:
-        shutil.rmtree(temp_dir)
-        raise HTTPException(status_code=400, detail="Impossible de générer des extraits valides sur cette plage.")
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Erreur FFmpeg : {e}")
 
-    zip_path = os.path.join(temp_dir, "extraits.zip")
+    # 5. Compresser le(s) résultat(s) en ZIP
+    zip_filename = "extraits_shorts.zip"
+    zip_path = os.path.join(output_dir, zip_filename)
     with zipfile.ZipFile(zip_path, 'w') as zipf:
-        for f in generated_files:
-            zipf.write(f, os.path.basename(f))
+        if os.path.exists(output_filepath):
+            zipf.write(output_filepath, arcname=output_filename)
 
-    return FileResponse(zip_path, media_type="application/zip", filename="extraits.zip")
+    # Nettoyage des fichiers temporaires sources et srt
+    if os.path.exists(input_path):
+        os.remove(input_path)
+    if srt_path and os.path.exists(srt_path):
+        os.remove(srt_path)
+
+    # 6. Renvoyer le ZIP au client
+    return FileResponse(zip_path, media_type="application/x-zip-compressed", filename=zip_filename)
