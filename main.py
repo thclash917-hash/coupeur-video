@@ -2,13 +2,13 @@ import os
 import zipfile
 import shutil
 import subprocess
+import json
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# 1. Configuration obligatoire des CORS pour autoriser GitHub Pages
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,6 +16,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def get_video_duration(input_path):
+    cmd = [
+        "ffprobe", "-v", "quiet",
+        "-print_format", "json",
+        "-show_format", input_path
+    ]
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    data = json.loads(result.stdout)
+    return float(data["format"]["duration"])
 
 @app.post("/cut")
 async def cut_video(
@@ -27,7 +37,6 @@ async def cut_video(
 ):
     temp_dir = "temp_clips"
     
-    # Nettoyage préventif
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
     os.makedirs(temp_dir, exist_ok=True)
@@ -36,14 +45,17 @@ async def cut_video(
     with open(input_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
+    # Récupération de la durée réelle de la vidéo en secondes
+    actual_video_duration = get_video_duration(input_path)
+
     start_sec = start_min * 60
-    end_sec = end_min * 60
+    end_sec = min(end_min * 60, actual_video_duration)
     total_available_time = end_sec - start_sec
 
-    if total_available_time <= 0:
-        raise HTTPException(status_code=400, detail="La minute de fin doit être supérieure au début.")
+    if total_available_time <= 0 or start_sec >= actual_video_duration:
+        shutil.rmtree(temp_dir)
+        raise HTTPException(status_code=400, detail="La plage demandée dépasse la durée réelle de la vidéo.")
 
-    # Calcul du pas d'espacement entre chaque extrait
     if max_clips > 1:
         step = (total_available_time - segment_duration) / (max_clips - 1)
         step = max(step, segment_duration)
@@ -55,13 +67,13 @@ async def cut_video(
     for i in range(max_clips):
         clip_start = start_sec + (i * step)
         
-        if clip_start + segment_duration > end_sec and i > 0:
+        # Stop si le début du clip + la durée dépasse la fin réelle
+        if clip_start + segment_duration > actual_video_duration:
             break
 
         output_filename = f"extrait_{i+1}.mp4"
         output_path = os.path.join(temp_dir, output_filename)
 
-        # Utilisation de "-c copy" pour découper instantanément sans faire sauter le serveur
         cmd = [
             "ffmpeg", "-y",
             "-ss", str(int(clip_start)),
@@ -73,11 +85,13 @@ async def cut_video(
         
         subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
-        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+        # On ne garde le fichier que s'il est valide (> 100 Ko)
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 100000:
             generated_files.append(output_path)
 
     if not generated_files:
-        raise HTTPException(status_code=400, detail="Impossible de générer des extraits sur cette plage.")
+        shutil.rmtree(temp_dir)
+        raise HTTPException(status_code=400, detail="Impossible de générer des extraits valides sur cette plage.")
 
     zip_path = os.path.join(temp_dir, "extraits.zip")
     with zipfile.ZipFile(zip_path, 'w') as zipf:
