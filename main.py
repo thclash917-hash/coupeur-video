@@ -1,6 +1,10 @@
-from fastapi import FastAPI
+import os
+import subprocess
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
+import yt_dlp
 
 app = FastAPI()
 
@@ -24,7 +28,48 @@ def home():
 
 @app.post("/cut")
 def cut_video(data: VideoRequest):
-    return {
-        "status": "success",
-        "message": f"Demande reçue pour {data.url} ({data.segment_duration}s par extrait)."
+    output_dir = "downloads"
+    os.makedirs(output_dir, exist_ok=True)
+    raw_video_path = os.path.join(output_dir, "input.mp4")
+    
+    # Clean previous files
+    if os.path.exists(raw_video_path):
+        os.remove(raw_video_path)
+
+    # Download source video using yt-dlp
+    ydl_opts = {
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'outtmpl': raw_video_path,
+        'quiet': True
     }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([data.url])
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Erreur de téléchargement YouTube: {str(e)}")
+
+    # Cut segment using ffmpeg
+    start_sec = data.start_min * 60
+    duration_sec = data.segment_duration
+    output_clip_path = os.path.join(output_dir, "clip.mp4")
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", str(start_sec),
+        "-i", raw_video_path,
+        "-t", str(duration_sec),
+        "-c", "copy",
+        output_clip_path
+    ]
+    
+    subprocess.run(cmd, check=True)
+
+    if not os.path.exists(output_clip_path):
+        raise HTTPException(status_code=500, detail="Échec du traitement vidéo par ffmpeg.")
+
+    return FileResponse(
+        path=output_clip_path,
+        filename="extrait.mp4",
+        media_type="video/mp4"
+    )
