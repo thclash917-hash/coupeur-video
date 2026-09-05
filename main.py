@@ -137,7 +137,6 @@ async def cut_video(
 # Route de nettoyage sécurisée (réservée à l'administrateur)
 @app.post("/clean")
 async def clean_server(x_admin_token: str = Header(...)):
-    # Vérifie si le mot de passe fourni correspond au secret de Render
     if x_admin_token != ADMIN_SECRET:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
