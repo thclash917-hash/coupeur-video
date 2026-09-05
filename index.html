@@ -398,13 +398,19 @@
         </div>
       </div>
 
-      <div class="form-group">
-        <label for="duration">Durée de l'extrait</label>
-        <select id="duration">
-          <option value="15">⚡ 15 secondes (Short rapide)</option>
-          <option value="30" selected>🔥 30 secondes (Standard)</option>
-          <option value="60">🎥 60 secondes (Long Format)</option>
-        </select>
+      <div class="form-row form-group">
+        <div>
+          <label for="duration">Durée de l'extrait</label>
+          <select id="duration">
+            <option value="15">⚡ 15s</option>
+            <option value="30" selected>🔥 30s</option>
+            <option value="60">🎥 60s</option>
+          </select>
+        </div>
+        <div>
+          <label for="maxClips">Nombre d'extraits</label>
+          <input type="number" id="maxClips" value="1" min="1" max="25" required>
+        </div>
       </div>
 
       <div class="form-row form-group">
@@ -511,6 +517,7 @@
     e.preventDefault();
 
     const duration = document.getElementById("duration").value;
+    const maxClips = document.getElementById("maxClips").value;
     const startMin = document.getElementById("startMin").value;
     const endMin = document.getElementById("endMin").value;
     const submitBtn = document.getElementById("submitBtn");
@@ -528,6 +535,7 @@
     const formData = new FormData();
     formData.append("file", fileInput.files[0]);
     formData.append("segment_duration", duration);
+    formData.append("max_clips", maxClips);
     formData.append("start_min", startMin);
     formData.append("end_min", endMin);
 
@@ -570,7 +578,7 @@
         const downloadUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = downloadUrl;
-        a.download = `extrait_${duration}s.mp4`;
+        a.download = `extraits_${duration}s.zip`;
         document.body.appendChild(a);
         a.click();
         a.remove();
