@@ -19,7 +19,7 @@ app.add_middleware(
 
 # Charger le modèle Whisper au démarrage ("base" est un bon compromis rapidité/précision)
 print("Chargement du modèle Whisper...")
-model = whisper.load_model("base")
+model = whisper.load_model("tiny")
 print("Modèle Whisper chargé avec succès !")
 
 def format_time(seconds):
