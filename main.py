@@ -1,5 +1,8 @@
 import os
 import subprocess
+import static_ffmpeg
+static_ffmpeg.add_paths()
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -32,11 +35,9 @@ def cut_video(data: VideoRequest):
     os.makedirs(output_dir, exist_ok=True)
     raw_video_path = os.path.join(output_dir, "input.mp4")
     
-    # Clean previous files
     if os.path.exists(raw_video_path):
         os.remove(raw_video_path)
 
-    # Download source video using yt-dlp
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': raw_video_path,
@@ -49,7 +50,6 @@ def cut_video(data: VideoRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erreur de téléchargement YouTube: {str(e)}")
 
-    # Cut segment using ffmpeg
     start_sec = data.start_min * 60
     duration_sec = data.segment_duration
     output_clip_path = os.path.join(output_dir, "clip.mp4")
