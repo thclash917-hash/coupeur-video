@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Découpeur Vidéo Shorts</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background-color: #f4f6f9; }
+        .card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; margin-bottom: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
+        input, select, button { width: 100%; padding: 12px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; }
+        button { background-color: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        button:hover { background-color: #0056b3; }
+        #status { margin-top: 20px; font-weight: bold; text-align: center; color: #007bff; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>✂️ Découper une vidéo</h2>
+        <form id="cutForm">
+            <div class="form-group">
+                <label for="url">Lien de la vidéo (YouTube) :</label>
+                <input type="url" id="url" required placeholder="https://www.youtube.com/watch?v=...">
+            </div>
+            
+            <div class="form-group">
+                <label for="duration">Durée de chaque extrait :</label>
+                <select id="duration">
+                    <option value="15">15 secondes</option>
+                    <option value="30">30 secondes</option>
+                    <option value="60">1 minute</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="startMin">Minute de début :</label>
+                <input type="number" id="startMin" value="0" min="0">
+            </div>
+
+            <div class="form-group">
+                <label for="endMin">Minute de fin :</label>
+                <input type="number" id="endMin" value="10" min="1">
+            </div>
+
+            <button type="submit">Lancer le découpage</button>
+        </form>
+
+        <p id="status"></p>
+    </div>
+
+    <script>
+        document.getElementById('cutForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const status = document.getElementById('status');
+            status.innerText = "Traitement en cours... Merci de patienter.";
+
+            const payload = {
+                url: document.getElementById('url').value,
+                segment_duration: parseInt(document.getElementById('duration').value),
+                start_min: parseInt(document.getElementById('startMin').value),
+                end_min: parseInt(document.getElementById('endMin').value)
+            };
+
+            try {
+                // Remplacez cette URL après avoir déployé votre backend sur Render.com
+                const response = await fetch('https://votre-api.onrender.com/cut', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                status.innerText = "Succès ! " + (result.message || "Vidéo traitée.");
+            } catch (err) {
+                status.innerText = "Erreur de connexion avec le serveur.";
+            }
+        });
+    </script>
+</body>
+</html>
