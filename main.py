@@ -1,95 +1,73 @@
 import os
+import zipfile
 import shutil
-import subprocess
-import static_ffmpeg
-
-static_ffmpeg.add_paths()
-
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
+import subprocess
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.get("/")
-def home():
-    return {"status": "API en ligne"}
-
-def cleanup_file(filepath: str):
-    try:
-        if os.path.exists(filepath):
-            os.remove(filepath)
-    except Exception:
-        pass
-
 @app.post("/cut")
 async def cut_video(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     segment_duration: int = Form(...),
+    max_clips: int = Form(...),
     start_min: int = Form(...),
     end_min: int = Form(...)
 ):
-    output_dir = "downloads"
-    os.makedirs(output_dir, exist_ok=True)
-
-    token = os.urandom(4).hex()
-    input_video_path = os.path.join(output_dir, f"input_{token}_{file.filename}")
-    output_clip_path = os.path.join(output_dir, f"clip_{token}.mp4")
-
-    # 1. Sauvegarde du fichier téléversé
-    try:
-        with open(input_video_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur réception : {str(e)}")
+    temp_dir = "temp_clips"
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    input_path = os.path.join(temp_dir, file.filename)
+    with open(input_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
 
     start_sec = start_min * 60
     end_sec = end_min * 60
+    total_available_time = end_sec - start_sec
 
-    if start_sec >= end_sec:
-        cleanup_file(input_video_path)
-        raise HTTPException(status_code=400, detail="Minute de début invalide.")
+    # Calcul du pas d'espacement pour garantir des extraits différents
+    if max_clips > 1:
+        step = max(segment_duration, (total_available_time - segment_duration) / (max_clips - 1))
+    else:
+        step = 0
 
-    if segment_duration <= 0:
-        cleanup_file(input_video_path)
-        raise HTTPException(status_code=400, detail="Durée invalide.")
+    generated_files = []
 
-    # 2. Découpage instantané sans réencodage (-c copy)
-    try:
+    for i in range(max_clips):
+        clip_start = start_sec + (i * step)
+        
+        # Sécurité pour ne pas dépasser la fin spécifiée
+        if clip_start + segment_duration > end_sec:
+            break
+
+        output_filename = f"extrait_{i+1}.mp4"
+        output_path = os.path.join(temp_dir, output_filename)
+
+        # Commande FFmpeg ré-encodée proprement
         cmd = [
-            "ffmpeg",
-            "-ss", str(start_sec),
-            "-i", input_video_path,
+            "ffmpeg", "-y",
+            "-ss", str(clip_start),
+            "-i", input_path,
             "-t", str(segment_duration),
-            "-c", "copy",
-            output_clip_path,
-            "-y"
+            "-c:v", "libx264",
+            "-c:a", "aac",
+            output_path
         ]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception as e:
-        cleanup_file(input_video_path)
-        cleanup_file(output_clip_path)
-        raise HTTPException(status_code=500, detail=f"Erreur FFmpeg : {str(e)}")
+        
+        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            generated_files.append(output_path)
 
-    # Suppression du fichier source lourd
-    cleanup_file(input_video_path)
+    if not generated_files:
+        shutil.rmtree(temp_dir)
+        raise HTTPException(status_code=400, detail="Plage horaire trop courte pour générer ces extraits.")
 
-    if not os.path.exists(output_clip_path):
-        raise HTTPException(status_code=500, detail="Échec du découpage.")
+    # Création du fichier ZIP avec tous les extraits uniques
+    zip_path = os.path.join(temp_dir, "extraits.zip")
+    with zipfile.ZipFile(zip_path, 'w') as zipf:
+        for f in generated_files:
+            zipf.write(f, os.path.basename(f))
 
-    background_tasks.add_task(cleanup_file, output_clip_path)
-
-    return FileResponse(
-        path=output_clip_path,
-        filename=f"extrait_{segment_duration}s.mp4",
-        media_type="video/mp4"
-    )
+    return FileResponse(zip_path, media_type="application/zip", filename="extraits_30s.zip")
