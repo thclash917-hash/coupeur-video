@@ -1,676 +1,918 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Découpeur Vidéo Shorts - Pro</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <!-- Google Identity Services SDK -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
-  
-  <style>
-    :root {
-      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
-      --card-bg: rgba(30, 41, 59, 0.75);
-      --card-border: rgba(255, 255, 255, 0.1);
-      --accent-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
-      --accent-hover: linear-gradient(135deg, #4f46e5 0%, #9333ea 50%, #db2777 100%);
-      --text-main: #f8fafc;
-      --text-muted: #94a3b8;
-      --input-bg: rgba(15, 23, 42, 0.6);
-      --input-border: rgba(255, 255, 255, 0.12);
-      --input-focus: #818cf8;
-      --success-color: #10b981;
-      --error-color: #f43f5e;
+import os
+import subprocess
+import shutil
+import uuid
+import zipfile
+import asyncio
+import time
+
+from fastapi import (
+    FastAPI,
+    File,
+    Form,
+    UploadFile,
+    Header,
+    HTTPException,
+    status,
+    BackgroundTasks,
+)
+
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+
+
+# ============================================================
+# APPLICATION
+# ============================================================
+
+app = FastAPI(
+    title="Découpeur Vidéo Shorts",
+    version="2.0"
+)
+
+
+# ============================================================
+# CORS
+# ============================================================
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+# Mot de passe admin
+ADMIN_SECRET = os.getenv(
+    "ADMIN_SECRET",
+    "mon_super_secret_123"
+)
+
+# Dossier principal des tâches
+BASE_DIR = os.path.abspath(
+    os.getenv("JOBS_DIR", "jobs")
+)
+
+os.makedirs(
+    BASE_DIR,
+    exist_ok=True
+)
+
+
+# ============================================================
+# CONFIGURATION DU NETTOYAGE
+# ============================================================
+
+# Les anciens jobs de plus de X heures peuvent être supprimés
+# par le bouton admin.
+#
+# Exemple :
+# 6 = suppression des jobs vieux de plus de 6 heures.
+#
+# Tu peux modifier cette valeur dans Render avec :
+# CLEANUP_AGE_HOURS=6
+#
+CLEANUP_AGE_HOURS = float(
+    os.getenv(
+        "CLEANUP_AGE_HOURS",
+        "6"
+    )
+)
+
+
+# ============================================================
+# LIMITATION DES TRAITEMENTS SIMULTANÉS
+# ============================================================
+
+# Nombre maximum de traitements FFmpeg en parallèle.
+#
+# 1 = un seul traitement à la fois
+# 2 = deux utilisateurs peuvent traiter simultanément
+# 3 = trois utilisateurs...
+#
+# Pour Render, 2 est généralement un bon point de départ.
+#
+MAX_CONCURRENT_JOBS = int(
+    os.getenv(
+        "MAX_CONCURRENT_JOBS",
+        "2"
+    )
+)
+
+
+FFMPEG_SEMAPHORE = asyncio.Semaphore(
+    MAX_CONCURRENT_JOBS
+)
+
+
+# ============================================================
+# ROUTE ROOT
+# ============================================================
+
+@app.get("/")
+async def root():
+
+    return {
+        "status": "online",
+        "message": "Le serveur est bien réveillé !",
+        "max_concurrent_jobs": MAX_CONCURRENT_JOBS,
+        "cleanup_age_hours": CLEANUP_AGE_HOURS,
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: 'Plus Jakarta Sans', sans-serif;
+
+# ============================================================
+# OUTILS JOBS
+# ============================================================
+
+def get_active_marker(job_dir: str) -> str:
+    """
+    Retourne le chemin du fichier marqueur indiquant
+    qu'un job est actuellement utilisé.
+    """
+
+    return os.path.join(
+        job_dir,
+        ".active"
+    )
+
+
+def mark_job_active(job_dir: str):
+    """
+    Marque un job comme actif.
+
+    Le fichier .active permet au bouton /clean de savoir
+    qu'il ne doit surtout pas supprimer ce dossier.
+    """
+
+    marker = get_active_marker(
+        job_dir
+    )
+
+    try:
+
+        with open(
+            marker,
+            "w",
+            encoding="utf-8"
+        ) as f:
+
+            f.write(
+                str(time.time())
+            )
+
+    except Exception as e:
+
+        print(
+            f"[JOB] Impossible de créer le marqueur actif : {e}"
+        )
+
+
+def unmark_job_active(job_dir: str):
+    """
+    Retire le marqueur actif.
+    """
+
+    marker = get_active_marker(
+        job_dir
+    )
+
+    try:
+
+        if os.path.exists(marker):
+
+            os.remove(marker)
+
+    except Exception as e:
+
+        print(
+            f"[JOB] Impossible de supprimer le marqueur actif : {e}"
+        )
+
+
+def is_job_active(job_dir: str) -> bool:
+    """
+    Vérifie si un job est actuellement actif.
+    """
+
+    marker = get_active_marker(
+        job_dir
+    )
+
+    return os.path.exists(
+        marker
+    )
+
+
+# ============================================================
+# NETTOYAGE APRÈS TÉLÉCHARGEMENT
+# ============================================================
+
+def release_job_after_download(job_dir: str):
+    """
+    Cette fonction est exécutée par FastAPI après que la
+    réponse FileResponse a terminé son envoi.
+
+    On retire donc le verrou .active seulement après le
+    téléchargement du ZIP.
+    """
+
+    print(
+        f"[JOB] Téléchargement terminé : {job_dir}"
+    )
+
+    unmark_job_active(
+        job_dir
+    )
+
+
+# ============================================================
+# FONCTION FFmpeg
+# ============================================================
+
+def run_ffmpeg(cmd):
+    """
+    Exécute FFmpeg.
+
+    Cette fonction est volontairement synchrone.
+    Elle sera appelée dans un thread avec asyncio.to_thread()
+    afin de ne pas bloquer la boucle asyncio de FastAPI.
+    """
+
+    print()
+    print("========================================")
+    print("LANCEMENT FFMPEG")
+    print("========================================")
+    print(" ".join(cmd))
+    print("========================================")
+    print()
+
+    subprocess.run(
+        cmd,
+        check=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=None,
+    )
+
+
+# ============================================================
+# FFmpeg ASYNC
+# ============================================================
+
+async def run_ffmpeg_async(cmd):
+    """
+    Lance FFmpeg dans un thread.
+
+    Cela permet à FastAPI de continuer à répondre aux autres
+    utilisateurs pendant qu'un traitement vidéo est en cours.
+    """
+
+    async with FFMPEG_SEMAPHORE:
+
+        await asyncio.to_thread(
+            run_ffmpeg,
+            cmd
+        )
+
+
+# ============================================================
+# NETTOYAGE D'UN JOB EN CAS D'ERREUR
+# ============================================================
+
+def delete_job(job_dir: str):
+    """
+    Supprime complètement un job.
+    """
+
+    try:
+
+        if os.path.exists(job_dir):
+
+            shutil.rmtree(
+                job_dir,
+                ignore_errors=True
+            )
+
+            print(
+                f"[JOB] Job supprimé : {job_dir}"
+            )
+
+    except Exception as e:
+
+        print(
+            f"[JOB] Erreur suppression {job_dir} : {e}"
+        )
+
+
+# ============================================================
+# CUT VIDEO
+# ============================================================
+
+@app.post("/cut")
+async def cut_video(
+    file: UploadFile = File(...),
+
+    segment_duration: int = Form(30),
+
+    max_clips: int = Form(1),
+
+    start_min: int = Form(0),
+
+    end_min: int = Form(10),
+
+    aspect_ratio: str = Form("original"),
+
+    quality: str = Form("original"),
+
+    add_subs: str = Form("false"),
+
+    background_tasks: BackgroundTasks = None,
+):
+
+    # ========================================================
+    # 1. VALIDATION
+    # ========================================================
+
+    if segment_duration <= 0:
+
+        raise HTTPException(
+            status_code=400,
+            detail="La durée du segment doit être supérieure à 0."
+        )
+
+
+    if max_clips <= 0:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Le nombre de clips doit être supérieur à 0."
+        )
+
+
+    if max_clips > 25:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Le nombre maximum d'extraits est de 25."
+        )
+
+
+    if start_min < 0:
+
+        raise HTTPException(
+            status_code=400,
+            detail="start_min ne peut pas être négatif."
+        )
+
+
+    if end_min <= start_min:
+
+        raise HTTPException(
+            status_code=400,
+            detail="end_min doit être supérieur à start_min."
+        )
+
+
+    # ========================================================
+    # 2. VALIDATION FORMAT
+    # ========================================================
+
+    allowed_aspect_ratios = {
+        "original",
+        "9:16",
     }
 
-    body {
-      background: var(--bg-gradient);
-      color: var(--text-main);
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
+    if aspect_ratio not in allowed_aspect_ratios:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Format d'image invalide."
+        )
+
+
+    allowed_qualities = {
+        "original",
+        "720p",
+        "1080p",
+        "4k",
     }
 
-    .container {
-      width: 100%;
-      max-width: 520px;
-      background: var(--card-bg);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid var(--card-border);
-      border-radius: 24px;
-      padding: 36px 30px;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    if quality not in allowed_qualities:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Qualité vidéo invalide."
+        )
+
+
+    # ========================================================
+    # 3. ID UNIQUE
+    # ========================================================
+
+    unique_id = uuid.uuid4().hex
+
+    print()
+    print("========================================")
+    print("NOUVELLE TÂCHE")
+    print("========================================")
+    print(f"JOB ID : {unique_id}")
+    print(f"FICHIER : {file.filename}")
+    print("========================================")
+    print()
+
+
+    # ========================================================
+    # 4. DOSSIER INDIVIDUEL
+    # ========================================================
+
+    job_dir = os.path.join(
+        BASE_DIR,
+        unique_id
+    )
+
+
+    os.makedirs(
+        job_dir,
+        exist_ok=False
+    )
+
+
+    # ========================================================
+    # 5. MARQUER LE JOB COMME ACTIF
+    # ========================================================
+
+    mark_job_active(
+        job_dir
+    )
+
+
+    # ========================================================
+    # 6. NOM DE FICHIER SÉCURISÉ
+    # ========================================================
+
+    original_filename = (
+        file.filename
+        or "video.mp4"
+    )
+
+
+    extension = os.path.splitext(
+        original_filename
+    )[1].lower()
+
+
+    if not extension:
+
+        extension = ".mp4"
+
+
+    # On accepte uniquement quelques extensions vidéo
+    allowed_extensions = {
+        ".mp4",
+        ".mov",
+        ".mkv",
+        ".webm",
+        ".avi",
+        ".m4v",
     }
 
-    .header {
-      text-align: center;
-      margin-bottom: 28px;
-    }
-
-    .header-icon {
-      font-size: 42px;
-      display: inline-block;
-      margin-bottom: 8px;
-      animation: float 3s ease-in-out infinite;
-    }
-
-    @keyframes float {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-6px); }
-    }
-
-    h1 {
-      font-size: 26px;
-      font-weight: 800;
-      background: var(--accent-gradient);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      letter-spacing: -0.5px;
-      margin-bottom: 6px;
-    }
-
-    .subtitle {
-      font-size: 14px;
-      color: var(--text-muted);
-    }
-
-    /* Auth Box */
-    .auth-box {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 16px;
-      padding: 20px 0;
-    }
-
-    .user-card {
-      display: none;
-      align-items: center;
-      justify-content: space-between;
-      background: rgba(15, 23, 42, 0.5);
-      border: 1px solid var(--card-border);
-      border-radius: 16px;
-      padding: 10px 16px;
-      margin-bottom: 20px;
-    }
-
-    .user-info {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .user-avatar {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-    }
-
-    .user-name {
-      font-size: 13px;
-      font-weight: 600;
-    }
-
-    .btn-logout {
-      background: transparent;
-      border: 1px solid var(--card-border);
-      color: var(--text-muted);
-      padding: 6px 12px;
-      border-radius: 8px;
-      font-size: 12px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .btn-logout:hover {
-      background: rgba(244, 63, 94, 0.2);
-      color: var(--error-color);
-      border-color: rgba(244, 63, 94, 0.4);
-    }
-
-    #appContent {
-      display: none;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-    }
-
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 600;
-      color: #cbd5e1;
-      margin-bottom: 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    /* Custom File Input */
-    .file-drop-zone {
-      position: relative;
-      border: 2px dashed var(--input-border);
-      border-radius: 16px;
-      padding: 24px 16px;
-      text-align: center;
-      background: var(--input-bg);
-      cursor: pointer;
-      transition: all 0.25s ease;
-    }
-
-    .file-drop-zone:hover, .file-drop-zone.dragover {
-      border-color: var(--input-focus);
-      background: rgba(99, 102, 241, 0.1);
-    }
-
-    .file-drop-zone input[type="file"] {
-      position: absolute;
-      top: 0; left: 0; width: 100%; height: 100%;
-      opacity: 0;
-      cursor: pointer;
-    }
-
-    .file-zone-icon {
-      font-size: 32px;
-      margin-bottom: 8px;
-      color: #818cf8;
-    }
-
-    .file-zone-text {
-      font-size: 14px;
-      color: var(--text-main);
-      font-weight: 600;
-    }
-
-    .file-zone-subtext {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-top: 4px;
-    }
-
-    .file-name-display {
-      display: none;
-      margin-top: 8px;
-      font-size: 13px;
-      color: #38bdf8;
-      font-weight: 600;
-      word-break: break-all;
-    }
-
-    /* Form Grid */
-    .form-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-    }
-
-    select, input[type="number"], input[type="password"] {
-      width: 100%;
-      padding: 12px 14px;
-      background: var(--input-bg);
-      border: 1px solid var(--input-border);
-      border-radius: 12px;
-      color: var(--text-main);
-      font-size: 14px;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-
-    select:focus, input[type="number"]:focus, input[type="password"]:focus {
-      border-color: var(--input-focus);
-      box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
-    }
-
-    select option {
-      background: #0f172a;
-      color: #fff;
-    }
-
-    /* Submit Button */
-    .btn-submit {
-      width: 100%;
-      padding: 15px;
-      background: var(--accent-gradient);
-      border: none;
-      border-radius: 14px;
-      color: white;
-      font-size: 16px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      box-shadow: 0 10px 20px -5px rgba(168, 85, 247, 0.4);
-      margin-top: 10px;
-    }
-
-    .btn-submit:hover:not(:disabled) {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 14px 25px -5px rgba(168, 85, 247, 0.5);
-    }
-
-    .btn-submit:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    /* Progress Section */
-    .progress-wrapper {
-      display: none;
-      margin-top: 24px;
-      background: rgba(15, 23, 42, 0.5);
-      border-radius: 16px;
-      padding: 16px;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    .progress-info {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
-      font-size: 13px;
-    }
-
-    .progress-status {
-      font-weight: 600;
-      color: #cbd5e1;
-    }
-
-    .progress-percent {
-      font-weight: 700;
-      color: #818cf8;
-    }
-
-    .progress-bar-container {
-      width: 100%;
-      height: 10px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 20px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .progress-bar-fill {
-      width: 0%;
-      height: 100%;
-      background: var(--accent-gradient);
-      border-radius: 20px;
-      transition: width 0.2s ease-out;
-    }
-
-    .progress-bar-fill.processing {
-      width: 100% !important;
-      background: linear-gradient(90deg, #6366f1, #a855f7, #ec4899, #6366f1);
-      background-size: 200% 100%;
-      animation: gradient-slide 1.5s linear infinite;
-    }
-
-    @keyframes gradient-slide {
-      0% { background-position: 0% 0%; }
-      100% { background-position: 200% 0%; }
-    }
-
-    /* Alert Message */
-    .status-alert {
-      display: none;
-      margin-top: 18px;
-      padding: 14px;
-      border-radius: 12px;
-      font-size: 13px;
-      font-weight: 600;
-      text-align: center;
-    }
-
-    .status-alert.error {
-      background: rgba(244, 63, 94, 0.15);
-      border: 1px solid rgba(244, 63, 94, 0.3);
-      color: var(--error-color);
-    }
-
-    .status-alert.success {
-      background: rgba(16, 185, 129, 0.15);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      color: var(--success-color);
-    }
-  </style>
-</head>
-<body>
-
-<div class="container">
-  <div class="header">
-    <div class="header-icon">🎬</div>
-    <h1>Studio Découpe Vidéo</h1>
-    <p class="subtitle">Extrais des Shorts/Reels à partir de tes vidéos MP4</p>
-  </div>
-
-  <!-- Profil utilisateur connecté -->
-  <div class="user-card" id="userCard">
-    <div class="user-info">
-      <img id="userAvatar" class="user-avatar" src="" alt="Avatar">
-      <span id="userName" class="user-name"></span>
-    </div>
-    <button class="btn-logout" id="logoutBtn">Déconnexion</button>
-  </div>
-
-  <!-- Ecran de connexion Google -->
-  <div class="auth-box" id="authBox">
-    <p class="subtitle">Connecte-toi pour accéder à l'outil</p>
-    <div id="g_id_onload"
-         data-client_id="963038022021-qgckobqtnfvb00b8mkiqss3ef13l4vn2.apps.googleusercontent.com"
-         data-callback="handleCredentialResponse"
-         data-auto_prompt="false">
-    </div>
-    <div class="g_id_signin"
-         data-type="standard"
-         data-size="large"
-         data-theme="outline"
-         data-text="sign_in_with"
-         data-shape="rectangular"
-         data-logo_alignment="left">
-    </div>
-  </div>
-
-  <!-- Application de découpe -->
-  <div id="appContent">
-    <form id="cutForm">
-      <div class="form-group">
-        <label>Fichier vidéo source</label>
-        <div class="file-drop-zone" id="dropZone">
-          <input type="file" id="videoFile" accept="video/mp4,video/*" required>
-          <div class="file-zone-icon">📁</div>
-          <div class="file-zone-text">Clique ou glisse une vidéo MP4 ici</div>
-          <div class="file-zone-subtext">Fichiers vidéo volumineux acceptés</div>
-          <div class="file-name-display" id="fileNameDisplay"></div>
-        </div>
-      </div>
-
-      <!-- Format d'image & Qualité -->
-      <div class="form-row form-group">
-        <div>
-          <label for="aspectRatio">Format d'image</label>
-          <select id="aspectRatio">
-            <option value="original" selected>📺 Original</option>
-            <option value="9:16">📱 Vertical 9:16</option>
-          </select>
-        </div>
-        <div>
-          <label for="quality">Qualité / Résolution</label>
-          <select id="quality">
-            <option value="original" selected>✨ Originale</option>
-            <option value="720p">⚡ HD 720p</option>
-            <option value="1080p">🎥 Full HD 1080p</option>
-            <option value="4k">🌟 4K Ultra HD</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="form-row form-group">
-        <div>
-          <label for="duration">Durée de l'extrait</label>
-          <select id="duration">
-            <option value="15">⚡ 15s</option>
-            <option value="30" selected>🔥 30s</option>
-            <option value="60">🎥 60s</option>
-          </select>
-        </div>
-        <div>
-          <label for="maxClips">Nombre d'extraits</label>
-          <input type="number" id="maxClips" value="1" min="1" max="25" required>
-        </div>
-      </div>
-
-      <div class="form-row form-group">
-        <div>
-          <label for="startMin">Min. Début</label>
-          <input type="number" id="startMin" value="0" min="0" required>
-        </div>
-        <div>
-          <label for="endMin">Min. Fin</label>
-          <input type="number" id="endMin" value="10" min="1" required>
-        </div>
-      </div>
-
-      <button type="submit" class="btn-submit" id="submitBtn">✂️ Lancer le découpage</button>
-    </form>
-
-    <!-- Zone Admin / Nettoyage -->
-    <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--card-border);">
-      <label style="color: #f43f5e; margin-bottom: 8px;">⚙️ Maintenance Serveur (Admin)</label>
-      <div style="display: flex; gap: 10px;">
-        <input type="password" id="adminToken" placeholder="Mot de passe admin" style="flex: 1;">
-        <button type="button" onclick="cleanServer()" style="background: #ef4444; border: none; border-radius: 12px; color: white; padding: 0 16px; font-weight: 700; cursor: pointer; transition: background 0.2s; white-space: nowrap;">🧹 Vider</button>
-      </div>
-    </div>
-
-    <!-- Section barre de progression -->
-    <div class="progress-wrapper" id="progressWrapper">
-      <div class="progress-info">
-        <span class="progress-status" id="progressStatus">Envoi de la vidéo...</span>
-        <span class="progress-percent" id="progressPercent">0%</span>
-      </div>
-      <div class="progress-bar-container">
-        <div class="progress-bar-fill" id="progressBarFill"></div>
-      </div>
-    </div>
-
-    <div class="status-alert" id="statusAlert"></div>
-  </div>
-</div>
-
-<script>
-  const API_URL = "https://coupeur-video.onrender.com/cut";
-  const CLEAN_URL = "https://coupeur-video.onrender.com/clean";
-
-  const fileInput = document.getElementById("videoFile");
-  const fileNameDisplay = document.getElementById("fileNameDisplay");
-  const dropZone = document.getElementById("dropZone");
-  const authBox = document.getElementById("authBox");
-  const appContent = document.getElementById("appContent");
-  const userCard = document.getElementById("userCard");
-  const userName = document.getElementById("userName");
-  const userAvatar = document.getElementById("userAvatar");
-  const logoutBtn = document.getElementById("logoutBtn");
-
-  // Décodage du jeton Google JWT
-  function parseJwt(token) {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(c => {
-      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-    return JSON.parse(jsonPayload);
-  }
-
-  // Callback appelé lors d'une connexion réussie
-  function handleCredentialResponse(response) {
-    const user = parseJwt(response.credential);
-    localStorage.setItem("user_token", response.credential);
-    showLoggedInState(user);
-  }
-
-  function showLoggedInState(user) {
-    authBox.style.display = "none";
-    appContent.style.display = "block";
-    userCard.style.display = "flex";
-    userName.innerText = user.name || user.email;
-    userAvatar.src = user.picture || "";
-  }
-
-  // Gestion de la déconnexion
-  logoutBtn.addEventListener("click", () => {
-    localStorage.removeItem("user_token");
-    authBox.style.display = "flex";
-    appContent.style.display = "none";
-    userCard.style.display = "none";
-  });
-
-  // Restauration de session au chargement
-  window.addEventListener("load", () => {
-    const savedToken = localStorage.getItem("user_token");
-    if (savedToken) {
-      try {
-        const user = parseJwt(savedToken);
-        showLoggedInState(user);
-      } catch {
-        localStorage.removeItem("user_token");
-      }
-    }
-  });
-
-  // Affichage du nom du fichier sélectionné
-  fileInput.addEventListener("change", () => {
-    if (fileInput.files.length > 0) {
-      const file = fileInput.files[0];
-      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-      fileNameDisplay.style.display = "block";
-      fileNameDisplay.innerText = `📄 ${file.name} (${sizeMB} Mo)`;
-    }
-  });
-
-  // Fonction pour vider le serveur (Admin)
-  async function cleanServer() {
-    const token = document.getElementById("adminToken").value;
-    if (!token) {
-      showAlert("Entre ton mot de passe admin pour nettoyer.", "error");
-      return;
-    }
-
-    try {
-      const response = await fetch(CLEAN_URL, {
-        method: "POST",
-        headers: {
-          "x-admin-token": token
-        }
-      });
-      
-      const data = await response.json();
-      if (response.ok) {
-        showAlert("✨ " + data.status, "success");
-      } else {
-        showAlert("Erreur : " + (data.detail || "Accès refusé"), "error");
-      }
-    } catch (err) {
-      showAlert("Erreur de connexion avec le serveur.", "error");
-    }
-  }
-
-  // Gestion du Formulaire de découpe
-  document.getElementById("cutForm").addEventListener("submit", (e) => {
-    e.preventDefault();
-
-    const duration = document.getElementById("duration").value;
-    const maxClips = document.getElementById("maxClips").value;
-    const startMin = document.getElementById("startMin").value;
-    const endMin = document.getElementById("endMin").value;
-    const aspectRatio = document.getElementById("aspectRatio").value;
-    const quality = document.getElementById("quality").value;
-
-    const submitBtn = document.getElementById("submitBtn");
-    const progressWrapper = document.getElementById("progressWrapper");
-    const progressStatus = document.getElementById("progressStatus");
-    const progressPercent = document.getElementById("progressPercent");
-    const progressBarFill = document.getElementById("progressBarFill");
-    const statusAlert = document.getElementById("statusAlert");
-
-    if (!fileInput.files[0]) {
-      showAlert("Veuillez sélectionner un fichier vidéo.", "error");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", fileInput.files[0]);
-    formData.append("segment_duration", duration);
-    formData.append("max_clips", maxClips);
-    formData.append("start_min", startMin);
-    formData.append("end_min", endMin);
-    formData.append("aspect_ratio", aspectRatio);
-    formData.append("quality", quality);
-
-    statusAlert.style.display = "none";
-    progressWrapper.style.display = "block";
-    progressBarFill.classList.remove("processing");
-    progressBarFill.style.width = "0%";
-    progressPercent.innerText = "0%";
-    progressStatus.innerText = "📤 Téléversement de la vidéo...";
-    submitBtn.disabled = true;
-
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", API_URL, true);
-    xhr.responseType = "blob";
-
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const percentComplete = Math.round((event.loaded / event.total) * 100);
-        progressBarFill.style.width = percentComplete + "%";
-        progressPercent.innerText = percentComplete + "%";
-
-        if (percentComplete === 100) {
-          progressStatus.innerText = "⚡ Découpage et conversion vidéo en cours...";
-          progressPercent.innerText = "Traitement";
-          progressBarFill.classList.add("processing");
-        }
-      }
-    };
-
-    xhr.onload = () => {
-      submitBtn.disabled = false;
-      progressWrapper.style.display = "none";
-
-      if (xhr.status === 200) {
-        const blob = xhr.response;
-        const downloadUrl = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = downloadUrl;
-        a.download = `extraits_${duration}s.zip`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-
-        showAlert("🎉 Découpage réussi ! Le fichier s'est téléchargé.", "success");
-      } else {
-        const reader = new FileReader();
-        reader.onload = () => {
-          try {
-            const errObj = JSON.parse(reader.result);
-            showAlert("Erreur : " + (errObj.detail || "Échec du découpage."), "error");
-          } catch {
-            showAlert("Une erreur serveur est survenue.", "error");
-          }
-        };
-        reader.readAsText(xhr.response);
-      }
-    };
-
-    xhr.onerror = () => {
-      submitBtn.disabled = false;
-      progressWrapper.style.display = "none";
-      showAlert("Erreur de connexion avec le serveur.", "error");
-    };
-
-    xhr.send(formData);
-  });
-
-  function showAlert(msg, type) {
-    const statusAlert = document.getElementById("statusAlert");
-    statusAlert.className = `status-alert ${type}`;
-    statusAlert.innerText = msg;
-    statusAlert.style.display = "block";
-  }
-</script>
-
-</body>
-</html>
+
+    if extension not in allowed_extensions:
+
+        extension = ".mp4"
+
+
+    input_filename = (
+        f"input{extension}"
+    )
+
+
+    input_path = os.path.join(
+        job_dir,
+        input_filename
+    )
+
+
+    # ========================================================
+    # 7. UPLOAD
+    # ========================================================
+
+    try:
+
+        with open(
+            input_path,
+            "wb"
+        ) as buffer:
+
+            while True:
+
+                chunk = await file.read(
+                    1024 * 1024
+                )
+
+                if not chunk:
+
+                    break
+
+
+                buffer.write(
+                    chunk
+                )
+
+
+        await file.close()
+
+
+        print(
+            f"[JOB {unique_id}] "
+            f"Fichier sauvegardé : {input_path}"
+        )
+
+
+    except Exception as e:
+
+        print(
+            f"[JOB {unique_id}] "
+            f"Erreur upload : {e}"
+        )
+
+        delete_job(
+            job_dir
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur pendant l'upload : {str(e)}"
+        )
+
+
+    # ========================================================
+    # 8. PRÉPARATION DES FILTRES
+    # ========================================================
+
+    filter_chains = []
+
+
+    # --------------------------------------------------------
+    # FORMAT 9:16
+    # --------------------------------------------------------
+
+    if aspect_ratio == "9:16":
+
+        filter_chains.append(
+            "crop="
+            "min(in_h*9/16\\,in_w):"
+            "min(in_h\\,in_w*16/9):"
+            "(in_w-min(in_h*9/16\\,in_w))/2:"
+            "(in_h-min(in_h\\,in_w*16/9))/2"
+        )
+
+
+    # --------------------------------------------------------
+    # QUALITÉ
+    # --------------------------------------------------------
+
+    if quality == "720p":
+
+        filter_chains.append(
+            "scale=-2:720"
+        )
+
+
+    elif quality == "1080p":
+
+        filter_chains.append(
+            "scale=-2:1080"
+        )
+
+
+    elif quality == "4k":
+
+        filter_chains.append(
+            "scale=-2:2160"
+        )
+
+
+    vf_arg = (
+        ",".join(filter_chains)
+        if filter_chains
+        else None
+    )
+
+
+    # ========================================================
+    # 9. GÉNÉRATION DES CLIPS
+    # ========================================================
+
+    start_sec = (
+        start_min * 60
+    )
+
+
+    output_files = []
+
+
+    for i in range(
+        1,
+        max_clips + 1
+    ):
+
+        current_start_sec = (
+            start_sec
+            + ((i - 1) * segment_duration)
+        )
+
+
+        output_filename = (
+            f"extrait_{i}.mp4"
+        )
+
+
+        output_filepath = os.path.join(
+            job_dir,
+            output_filename
+        )
+
+
+        # ====================================================
+        # COMMANDE FFMPEG
+        # ====================================================
+
+        cmd = [
+            "ffmpeg",
+
+            "-y",
+
+            "-hide_banner",
+
+            "-nostdin",
+
+            "-i",
+            input_path,
+
+            "-ss",
+            str(current_start_sec),
+
+            "-t",
+            str(segment_duration),
+        ]
+
+
+        # ====================================================
+        # FILTRE
+        # ====================================================
+
+        if vf_arg:
+
+            cmd.extend([
+                "-vf",
+                vf_arg
+            ])
+
+
+        # ====================================================
+        # ENCODAGE
+        # ====================================================
+
+        cmd.extend([
+
+            "-r",
+            "30",
+
+            "-c:v",
+            "libx264",
+
+            "-preset",
+            "ultrafast",
+
+            "-crf",
+            "23",
+
+            "-pix_fmt",
+            "yuv420p",
+
+            "-c:a",
+            "aac",
+
+            "-b:a",
+            "128k",
+
+            "-movflags",
+            "+faststart",
+
+            output_filepath
+        ])
+
+
+        # ====================================================
+        # EXÉCUTION
+        # ====================================================
+
+        try:
+
+            print(
+                f"[JOB {unique_id}] "
+                f"Traitement clip {i}/{max_clips}"
+            )
+
+
+            await run_ffmpeg_async(
+                cmd
+            )
+
+
+            if os.path.exists(
+                output_filepath
+            ):
+
+                output_files.append(
+                    (
+                        output_filepath,
+                        output_filename
+                    )
+                )
+
+
+                print(
+                    f"[JOB {unique_id}] "
+                    f"Clip {i} terminé."
+                )
+
+
+        except subprocess.CalledProcessError as e:
+
+            print(
+                f"[JOB {unique_id}] "
+                f"Erreur FFmpeg clip {i} : {e}"
+            )
+
+
+    # ========================================================
+    # 10. VÉRIFICATION
+    # ========================================================
+
+    if not output_files:
+
+        delete_job(
+            job_dir
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Aucun clip n'a pu être généré."
+        )
+
+
+    # ========================================================
+    # 11. CRÉATION DU ZIP
+    # ========================================================
+
+    zip_filename = (
+        f"extraits_shorts_{unique_id}.zip"
+    )
+
+
+    zip_path = os.path.join(
+        job_dir,
+        zip_filename
+    )
+
+
+    try:
+
+        with zipfile.ZipFile(
+            zip_path,
+            "w",
+            compression=zipfile.ZIP_DEFLATED
+        ) as zipf:
+
+            for (
+                file_path,
+                arc_name
+            ) in output_files:
+
+                if os.path.exists(
+                    file_path
+                ):
+
+                    zipf.write(
+                        file_path,
+                        arcname=arc_name
+                    )
+
+
+        print(
+            f"[JOB {unique_id}] "
+            f"ZIP créé : {zip_path}"
+        )
+
+
+    except Exception as e:
+
+        print(
+            f"[JOB {unique_id}] "
+            f"Erreur création ZIP : {e}"
+        )
+
+        delete_job(
+            job_dir
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur création ZIP : {str(e)}"
+        )
+
+
+    # ========================================================
+    # 12. SUPPRESSION DE LA VIDÉO SOURCE
+    # ========================================================
+
+    try:
+
+        if os.path.exists(
+            input_path
+        ):
+
+            os.remove(
+                input_path
+            )
+
+
+    except Exception as e:
+
+        print(
+            f"[JOB {unique_id}] "
+            f"Impossible de supprimer la source : {e}"
+        )
+
+
+    # ========================================================
+    # 13. VÉRIFICATION DU ZIP
+    # ========================================================
+
+    if not os.path.exists(
+        zip_path
+    ):
+
+        delete_job(
+            job_dir
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Le fichier ZIP n'a pas pu être créé."
+        )
+
+
+    # ========================================================
+    # 14. RÉPONSE
+    # ========================================================
+
+    print()
+    print("========================================")
+    print("TÂCHE TERMINÉE")
+    print("========================================")
+    print(f"JOB ID : {unique_id}")
+    print(f"ZIP : {zip_path}")
+    print("========================================")
+    print()
+
+
+    # ========================================================
+    # IMPORTANT :
+    #
+    # On NE retire PAS .active ici.
+    #
+    # Le fichier .active reste présent pendant le téléchargement.
+    #
+    # Il sera retiré par BackgroundTasks seulement après que
+    # FileResponse ait terminé d'envoyer le ZIP.
+    #
+    # Cela empêche /clean de supprimer le ZIP pendant que
+    # l'utilisateur est encore en train de le télécharger.
+    # ========================================================
+
+    if background_tasks is not None:
+
+        background_tasks.add_task(
+            release_job_after_download,
+            job_dir
+        )
+
+
+    return FileResponse(
+
+        path=zip_path,
+
+        media_type="application/zip",
+
+        filename=zip_filename,
+
+    )
