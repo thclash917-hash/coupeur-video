@@ -3,3 +3,4 @@ uvicorn
 pydantic
 static-ffmpeg
 requests
+yt-dlp
