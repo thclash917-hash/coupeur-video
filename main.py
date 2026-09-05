@@ -47,9 +47,11 @@ def cut_video(data: VideoRequest, background_tasks: BackgroundTasks):
         'force_keyframes_at_cuts': True,
         'quiet': True,
         'nocheckcertificate': True,
+        'username': 'oauth2',
+        'password': '',
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'mweb']
+                'player_client': ['tv_embedded', 'android']
             }
         }
     }
