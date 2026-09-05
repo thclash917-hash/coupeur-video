@@ -35,7 +35,7 @@ class VideoRequest(BaseModel):
     end_min: int
 
 # ==========================================
-# ROUTES & LOGIQUE
+# UTILITAIRES
 # ==========================================
 
 @app.get("/")
@@ -48,6 +48,17 @@ def cleanup_file(filepath: str):
             os.remove(filepath)
     except Exception:
         pass
+
+def normalize_youtube_url(url: str) -> str:
+    """Transforme les liens youtu.be en liens youtube.com standards"""
+    if "youtu.be/" in url:
+        video_id = url.split("youtu.be/")[1].split("?")[0].split("&")[0]
+        return f"https://www.youtube.com/watch?v={video_id}"
+    return url
+
+# ==========================================
+# DÉCOUPAGE VIDÉO VIA COBALT
+# ==========================================
 
 @app.post("/cut")
 def cut_video(data: VideoRequest, background_tasks: BackgroundTasks):
@@ -71,37 +82,51 @@ def cut_video(data: VideoRequest, background_tasks: BackgroundTasks):
             detail="La durée du segment doit être supérieure à 0."
         )
 
-    # ==========================================
-    # 1. RÉCUPÉRATION DU FLUX VIA COBALT
-    # ==========================================
+    # 1. Normalisation de l'URL
+    clean_url = normalize_youtube_url(data.url)
 
-    cobalt_url = "https://api.cobalt.tools/"
+    # 2. Récupération du flux vidéo via Cobalt (avec instance de secours)
+    cobalt_instances = [
+        "https://api.cobalt.tools/",
+        "https://cobalt-api.kwiatek.xyz/"
+    ]
+
+    direct_stream_url = None
+    last_error = ""
+
     headers = {
         "Accept": "application/json",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0"
     }
     payload = {
-        "url": data.url,
+        "url": clean_url,
         "videoQuality": "720"
     }
 
-    try:
-        response = requests.post(cobalt_url, json=payload, headers=headers, timeout=15)
-        res_data = response.json()
+    for instance in cobalt_instances:
+        try:
+            response = requests.post(instance, json=payload, headers=headers, timeout=12)
+            res_data = response.json()
 
-        if response.status_code != 200 or "url" not in res_data:
-            error_detail = res_data.get("text", "Impossible d'extraire la vidéo.")
-            raise HTTPException(status_code=400, detail=f"Erreur Cobalt : {error_detail}")
+            if response.status_code == 200 and "url" in res_data:
+                direct_stream_url = res_data["url"]
+                break
+            elif "text" in res_data:
+                last_error = res_data["text"]
+            elif "error" in res_data and "code" in res_data["error"]:
+                last_error = res_data["error"]["code"]
+        except Exception as e:
+            last_error = str(e)
+            continue
 
-        direct_stream_url = res_data["url"]
+    if not direct_stream_url:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Erreur lors de l'extraction vidéo : {last_error if last_error else 'Lien invalide ou indisponible'}"
+        )
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Impossible de contacter l'API Cobalt : {str(e)}")
-
-    # ==========================================
-    # 2. DÉCOUPAGE AVEC FFMPEG
-    # ==========================================
-
+    # 3. Découpage avec FFmpeg
     try:
         cmd = [
             "ffmpeg",
@@ -124,7 +149,6 @@ def cut_video(data: VideoRequest, background_tasks: BackgroundTasks):
     if not os.path.exists(output_clip_path):
         raise HTTPException(status_code=500, detail="Échec de la génération du fichier.")
 
-    # Nettoyage automatique après l'envoi
     background_tasks.add_task(cleanup_file, output_clip_path)
 
     return FileResponse(
