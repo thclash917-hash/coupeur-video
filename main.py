@@ -160,6 +160,13 @@ def cut_video(
 
         # Évite certains problèmes de certificat
         "nocheckcertificate": True,
+
+        # Contournement anti-bot YouTube (clients mobiles)
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "ios"]
+            }
+        },
     }
 
     # ==========================================
