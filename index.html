@@ -398,7 +398,15 @@
         </div>
       </div>
 
-      <!-- NOUVEAU : Format d'image & Qualité -->
+      <!-- Option sous-titres -->
+      <div class="form-group" style="display: flex; align-items: center; gap: 10px; background: var(--input-bg); padding: 12px 14px; border: 1px solid var(--input-border); border-radius: 12px;">
+        <input type="checkbox" id="addSubs" style="width: 18px; height: 18px; accent-color: #818cf8; cursor: pointer;">
+        <label for="addSubs" style="margin: 0; cursor: pointer; font-size: 14px; text-transform: none; color: var(--text-main);">
+          💬 Ajouter des sous-titres automatiques
+        </label>
+      </div>
+
+      <!-- Format d'image & Qualité -->
       <div class="form-row form-group">
         <div>
           <label for="aspectRatio">Format d'image</label>
@@ -541,6 +549,7 @@
     const endMin = document.getElementById("endMin").value;
     const aspectRatio = document.getElementById("aspectRatio").value;
     const quality = document.getElementById("quality").value;
+    const addSubs = document.getElementById("addSubs").checked; // Récupération de la case
 
     const submitBtn = document.getElementById("submitBtn");
     const progressWrapper = document.getElementById("progressWrapper");
@@ -562,6 +571,7 @@
     formData.append("end_min", endMin);
     formData.append("aspect_ratio", aspectRatio);
     formData.append("quality", quality);
+    formData.append("add_subs", addSubs ? "true" : "false"); // Envoi au serveur
 
     // Reinitialisation des vues
     statusAlert.style.display = "none";
