@@ -1,6 +1,7 @@
 import os
 import subprocess
-from fastapi import FastAPI, File, Form, UploadFile
+import shutil
+from fastapi import FastAPI, File, Form, UploadFile, Header, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
@@ -17,8 +18,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialisation du client Groq (la clé API est lue depuis les variables d'environnement de Render)
+# Initialisation des clients (clés lues depuis les variables d'environnement de Render)
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "mon_super_secret_123")
 
 def format_time(seconds):
     """Convertit des secondes en format SRT (HH:MM:SS,mmm)"""
@@ -52,10 +54,8 @@ async def cut_video(
     if add_subs == "true":
         audio_path = "temp_audio.mp3"
         try:
-            # Extraire l'audio pour Groq
             subprocess.run(["ffmpeg", "-y", "-i", input_path, "-q:a", "0", "-map", "a", audio_path], check=True)
             
-            # Transcription ultra-rapide avec l'API Groq
             with open(audio_path, "rb") as audio_file:
                 transcription = client.audio.transcriptions.create(
                     file=(audio_path, audio_file.read()),
@@ -63,7 +63,6 @@ async def cut_video(
                     response_format="verbose_json"
                 )
             
-            # Créer un fichier de sous-titres .srt valide
             srt_path = "temp_subtitles.srt"
             with open(srt_path, "w", encoding="utf-8") as srt_file:
                 segments = getattr(transcription, "segments", [])
@@ -82,14 +81,12 @@ async def cut_video(
             if os.path.exists(audio_path):
                 os.remove(audio_path)
 
-    # 3. Préparation des filtres FFmpeg (Format 9:16, Qualité et Sous-titres)
+    # 3. Préparation des filtres FFmpeg
     filter_chains = []
 
-    # Gestion du format d'image (Crop 9:16 si demandé)
     if aspect_ratio == "9:16":
         filter_chains.append("crop=in_h*9/16:in_h:(in_w-in_h*9/16)/2:0")
 
-    # Gestion de la qualité / résolution
     if quality == "720p":
         filter_chains.append("scale=-2:720")
     elif quality == "1080p":
@@ -97,21 +94,19 @@ async def cut_video(
     elif quality == "4k":
         filter_chains.append("scale=-2:2160")
 
-    # Incrustation des sous-titres si le fichier .srt existe
     if srt_path and os.path.exists(srt_path):
         abs_srt_path = os.path.abspath(srt_path).replace("\\", "/")
         sub_filter = f"subtitles='{abs_srt_path}':force_style='FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2'"
         filter_chains.append(sub_filter)
 
-    # Construction de la chaîne de filtres globale (-vf)
     vf_arg = ",".join(filter_chains) if filter_chains else None
 
     # 4. Découpage de l'extrait
-    start_time_sec = start_min * 60
+    start_temp_sec = start_min * 60
     output_filename = "extrait_1.mp4"
     output_filepath = os.path.join(output_dir, output_filename)
 
-    cmd = ["ffmpeg", "-y", "-ss", str(start_time_sec), "-i", input_path, "-t", str(segment_duration)]
+    cmd = ["ffmpeg", "-y", "-ss", str(start_temp_sec), "-i", input_path, "-t", str(segment_duration)]
     
     if vf_arg:
         cmd.extend(["-vf", vf_arg])
@@ -136,5 +131,22 @@ async def cut_video(
     if srt_path and os.path.exists(srt_path):
         os.remove(srt_path)
 
-    # 6. Renvoyer le ZIP au client
     return FileResponse(zip_path, media_type="application/x-zip-compressed", filename=zip_filename)
+
+
+# Route de nettoyage sécurisée (réservée à l'administrateur)
+@app.post("/clean")
+async def clean_server(x_admin_token: str = Header(...)):
+    # Vérifie si le mot de passe fourni correspond au secret de Render
+    if x_admin_token != ADMIN_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Accès refusé : mot de passe incorrect !"
+        )
+    
+    output_dir = "output_clips"
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
+        
+    return {"status": "Serveur nettoyé avec succès ! Tous les clips temporaires ont été supprimés."}
