@@ -7,6 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Google Identity Services SDK -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  
   <style>
     :root {
       --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
@@ -82,6 +85,64 @@
     .subtitle {
       font-size: 14px;
       color: var(--text-muted);
+    }
+
+    /* Auth Box */
+    .auth-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 20px 0;
+    }
+
+    .user-card {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 10px 16px;
+      margin-bottom: 20px;
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+    }
+
+    .user-name {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .btn-logout {
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-logout:hover {
+      background: rgba(244, 63, 94, 0.2);
+      color: var(--error-color);
+      border-color: rgba(244, 63, 94, 0.4);
+    }
+
+    #appContent {
+      display: none;
     }
 
     .form-group {
@@ -296,53 +357,83 @@
     <p class="subtitle">Extrais des Shorts/Reels à partir de tes vidéos MP4</p>
   </div>
 
-  <form id="cutForm">
-    <div class="form-group">
-      <label>Fichier vidéo source</label>
-      <div class="file-drop-zone" id="dropZone">
-        <input type="file" id="videoFile" accept="video/mp4,video/*" required>
-        <div class="file-zone-icon">📁</div>
-        <div class="file-zone-text">Clique ou glisse une vidéo MP4 ici</div>
-        <div class="file-zone-subtext">Fichiers vidéo volumineux acceptés</div>
-        <div class="file-name-display" id="fileNameDisplay"></div>
-      </div>
+  <!-- Profil utilisateur connecté -->
+  <div class="user-card" id="userCard">
+    <div class="user-info">
+      <img id="userAvatar" class="user-avatar" src="" alt="Avatar">
+      <span id="userName" class="user-name"></span>
     </div>
+    <button class="btn-logout" id="logoutBtn">Déconnexion</button>
+  </div>
 
-    <div class="form-group">
-      <label for="duration">Durée de l'extrait</label>
-      <select id="duration">
-        <option value="15">⚡ 15 secondes (Short rapide)</option>
-        <option value="30" selected>🔥 30 secondes (Standard)</option>
-        <option value="60">🎥 60 secondes (Long Format)</option>
-      </select>
+  <!-- Ecran de connexion Google -->
+  <div class="auth-box" id="authBox">
+    <p class="subtitle">Connecte-toi pour accéder à l'outil</p>
+    <div id="g_id_onload"
+         data-client_id="qqckobqtnfvb00b8mkiqss3ef13l4vn2.apps.googleusercontent.com"
+         data-callback="handleCredentialResponse"
+         data-auto_prompt="false">
     </div>
-
-    <div class="form-row form-group">
-      <div>
-        <label for="startMin">Min. Début</label>
-        <input type="number" id="startMin" value="0" min="0" required>
-      </div>
-      <div>
-        <label for="endMin">Min. Fin</label>
-        <input type="number" id="endMin" value="10" min="1" required>
-      </div>
-    </div>
-
-    <button type="submit" class="btn-submit" id="submitBtn">✂️ Lancer le découpage</button>
-  </form>
-
-  <!-- Section barre de progression -->
-  <div class="progress-wrapper" id="progressWrapper">
-    <div class="progress-info">
-      <span class="progress-status" id="progressStatus">Envoi de la vidéo...</span>
-      <span class="progress-percent" id="progressPercent">0%</span>
-    </div>
-    <div class="progress-bar-container">
-      <div class="progress-bar-fill" id="progressBarFill"></div>
+    <div class="g_id_signin"
+         data-type="standard"
+         data-size="large"
+         data-theme="outline"
+         data-text="sign_in_with"
+         data-shape="rectangular"
+         data-logo_alignment="left">
     </div>
   </div>
 
-  <div class="status-alert" id="statusAlert"></div>
+  <!-- Application de découpe -->
+  <div id="appContent">
+    <form id="cutForm">
+      <div class="form-group">
+        <label>Fichier vidéo source</label>
+        <div class="file-drop-zone" id="dropZone">
+          <input type="file" id="videoFile" accept="video/mp4,video/*" required>
+          <div class="file-zone-icon">📁</div>
+          <div class="file-zone-text">Clique ou glisse une vidéo MP4 ici</div>
+          <div class="file-zone-subtext">Fichiers vidéo volumineux acceptés</div>
+          <div class="file-name-display" id="fileNameDisplay"></div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="duration">Durée de l'extrait</label>
+        <select id="duration">
+          <option value="15">⚡ 15 secondes (Short rapide)</option>
+          <option value="30" selected>🔥 30 secondes (Standard)</option>
+          <option value="60">🎥 60 secondes (Long Format)</option>
+        </select>
+      </div>
+
+      <div class="form-row form-group">
+        <div>
+          <label for="startMin">Min. Début</label>
+          <input type="number" id="startMin" value="0" min="0" required>
+        </div>
+        <div>
+          <label for="endMin">Min. Fin</label>
+          <input type="number" id="endMin" value="10" min="1" required>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-submit" id="submitBtn">✂️ Lancer le découpage</button>
+    </form>
+
+    <!-- Section barre de progression -->
+    <div class="progress-wrapper" id="progressWrapper">
+      <div class="progress-info">
+        <span class="progress-status" id="progressStatus">Envoi de la vidéo...</span>
+        <span class="progress-percent" id="progressPercent">0%</span>
+      </div>
+      <div class="progress-bar-container">
+        <div class="progress-bar-fill" id="progressBarFill"></div>
+      </div>
+    </div>
+
+    <div class="status-alert" id="statusAlert"></div>
+  </div>
 </div>
 
 <script>
@@ -351,6 +442,59 @@
   const fileInput = document.getElementById("videoFile");
   const fileNameDisplay = document.getElementById("fileNameDisplay");
   const dropZone = document.getElementById("dropZone");
+  const authBox = document.getElementById("authBox");
+  const appContent = document.getElementById("appContent");
+  const userCard = document.getElementById("userCard");
+  const userName = document.getElementById("userName");
+  const userAvatar = document.getElementById("userAvatar");
+  const logoutBtn = document.getElementById("logoutBtn");
+
+  // Décodage du jeton Google JWT
+  function parseJwt(token) {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(c => {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  }
+
+  // Callback appelé lors d'une connexion réussie
+  function handleCredentialResponse(response) {
+    const user = parseJwt(response.credential);
+    localStorage.setItem("user_token", response.credential);
+    
+    showLoggedInState(user);
+  }
+
+  function showLoggedInState(user) {
+    authBox.style.display = "none";
+    appContent.style.display = "block";
+    userCard.style.display = "flex";
+    userName.innerText = user.name || user.email;
+    userAvatar.src = user.picture || "";
+  }
+
+  // Gestion de la déconnexion
+  logoutBtn.addEventListener("click", () => {
+    localStorage.removeItem("user_token");
+    authBox.style.display = "flex";
+    appContent.style.display = "none";
+    userCard.style.display = "none";
+  });
+
+  // Restauration de session au chargement
+  window.addEventListener("load", () => {
+    const savedToken = localStorage.getItem("user_token");
+    if (savedToken) {
+      try {
+        const user = parseJwt(savedToken);
+        showLoggedInState(user);
+      } catch {
+        localStorage.removeItem("user_token");
+      }
+    }
+  });
 
   // Affichage du nom du fichier sélectionné
   fileInput.addEventListener("change", () => {
