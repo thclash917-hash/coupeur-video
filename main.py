@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import requests
 import static_ffmpeg
@@ -9,12 +10,9 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+import yt_dlp
 
 app = FastAPI()
-
-# ==========================================
-# CORS
-# ==========================================
 
 app.add_middleware(
     CORSMiddleware,
@@ -24,19 +22,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ==========================================
-# MODÈLE DE DONNÉES
-# ==========================================
-
 class VideoRequest(BaseModel):
     url: str
     segment_duration: int
     start_min: int
     end_min: int
-
-# ==========================================
-# UTILITAIRES
-# ==========================================
 
 @app.get("/")
 def home():
@@ -49,20 +39,42 @@ def cleanup_file(filepath: str):
     except Exception:
         pass
 
-def normalize_youtube_url(url: str) -> str:
-    """Transforme les liens youtu.be en liens youtube.com standards"""
-    if "youtu.be/" in url:
-        video_id = url.split("youtu.be/")[1].split("?")[0].split("&")[0]
-        return f"https://www.youtube.com/watch?v={video_id}"
-    return url
+def extract_video_id(url: str) -> str:
+    patterns = [
+        r"(?:v=|\/)([\w-]{11})(?:\?|&|#|$)",
+        r"youtu\.be\/([\w-]{11})"
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
 
-# ==========================================
-# DÉCOUPAGE VIDÉO VIA COBALT
-# ==========================================
+def get_stream_from_piped(video_id: str) -> str:
+    piped_instances = [
+        "https://pipedapi.kavin.rocks",
+        "https://api.piped.privacydev.net",
+        "https://pipedapi.mha.fi"
+    ]
+    for instance in piped_instances:
+        try:
+            res = requests.get(f"{instance}/streams/{video_id}", timeout=6)
+            if res.status_code == 200:
+                data = res.json()
+                streams = data.get("videoStreams", [])
+                # Recherche d'un flux combiné vidéo+audio
+                for stream in streams:
+                    if not stream.get("videoOnly", True) and stream.get("url"):
+                        return stream["url"]
+                # Repli sur le premier flux vidéo disponible
+                if streams and "url" in streams[0]:
+                    return streams[0]["url"]
+        except Exception:
+            continue
+    return None
 
 @app.post("/cut")
 def cut_video(data: VideoRequest, background_tasks: BackgroundTasks):
-
     output_dir = "downloads"
     os.makedirs(output_dir, exist_ok=True)
     output_clip_path = os.path.join(output_dir, f"clip_{os.urandom(4).hex()}.mp4")
@@ -71,55 +83,37 @@ def cut_video(data: VideoRequest, background_tasks: BackgroundTasks):
     end_sec = data.end_min * 60
 
     if start_sec >= end_sec:
-        raise HTTPException(
-            status_code=400,
-            detail="La minute de début doit être inférieure à la minute de fin."
-        )
+        raise HTTPException(status_code=400, detail="La minute de début doit être inférieure à la minute de fin.")
 
-    if data.segment_duration <= 0:
-        raise HTTPException(
-            status_code=400,
-            detail="La durée du segment doit être supérieure à 0."
-        )
+    video_id = extract_video_id(data.url)
+    if not video_id:
+        raise HTTPException(status_code=400, detail="URL YouTube invalide.")
 
-    # 1. Normalisation de l'URL
-    clean_url = normalize_youtube_url(data.url)
+    # 1. Tentative via l'API Piped
+    stream_url = get_stream_from_piped(video_id)
 
-    # 2. Liste d'instances Cobalt valides
-    cobalt_instances = [
-        "https://api.cobalt.tools/",
-        "https://co.wuk.sh/"
-    ]
-
-    direct_stream_url = None
-
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0"
-    }
-    payload = {
-        "url": clean_url,
-        "videoQuality": "720"
-    }
-
-    for instance in cobalt_instances:
+    # 2. Secours via yt-dlp (Clients TV / VR)
+    if not stream_url:
+        clean_url = f"https://www.youtube.com/watch?v={video_id}"
+        ydl_opts = {
+            "format": "best[ext=mp4]/best",
+            "quiet": True,
+            "nocheckcertificate": True,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["tvhtml5", "android_vr"]
+                }
+            }
+        }
         try:
-            response = requests.post(instance, json=payload, headers=headers, timeout=10)
-            if response.status_code == 200:
-                res_data = response.json()
-                if "url" in res_data:
-                    direct_stream_url = res_data["url"]
-                    break
-        except Exception:
-            # Passe silencieusement à l'instance suivante si le serveur est indisponible
-            continue
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(clean_url, download=False)
+                stream_url = info.get("url")
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Impossible de récupérer la vidéo : {str(e)}")
 
-    if not direct_stream_url:
-        raise HTTPException(
-            status_code=400,
-            detail="Impossible de récupérer le flux vidéo. Le service est temporairement indisponible."
-        )
+    if not stream_url:
+        raise HTTPException(status_code=500, detail="Aucun flux vidéo accessible.")
 
     # 3. Découpage avec FFmpeg
     try:
@@ -127,27 +121,21 @@ def cut_video(data: VideoRequest, background_tasks: BackgroundTasks):
             "ffmpeg",
             "-y",
             "-ss", str(start_sec),
-            "-i", direct_stream_url,
+            "-i", stream_url,
             "-t", str(data.segment_duration),
             "-c:v", "libx264",
             "-c:a", "aac",
             "-strict", "experimental",
             output_clip_path
         ]
-
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
     except Exception as e:
         cleanup_file(output_clip_path)
-        raise HTTPException(status_code=500, detail=f"Erreur lors du traitement vidéo : {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur de traitement FFmpeg : {str(e)}")
 
     if not os.path.exists(output_clip_path):
-        raise HTTPException(status_code=500, detail="Échec de la génération du fichier.")
+        raise HTTPException(status_code=500, detail="Échec du découpage.")
 
     background_tasks.add_task(cleanup_file, output_clip_path)
 
-    return FileResponse(
-        path=output_clip_path,
-        filename="extrait.mp4",
-        media_type="video/mp4"
-    )
+    return FileResponse(path=output_clip_path, filename="extrait.mp4", media_type="video/mp4")
