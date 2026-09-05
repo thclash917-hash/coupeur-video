@@ -1,5 +1,4 @@
 import os
-import subprocess
 import static_ffmpeg
 static_ffmpeg.add_paths()
 
@@ -48,10 +47,9 @@ def cut_video(data: VideoRequest, background_tasks: BackgroundTasks):
         'force_keyframes_at_cuts': True,
         'quiet': True,
         'nocheckcertificate': True,
-        'addheaders': 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'web']
+                'player_client': ['ios', 'mweb']
             }
         }
     }
