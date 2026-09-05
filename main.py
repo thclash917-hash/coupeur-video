@@ -3,7 +3,7 @@ import subprocess
 import static_ffmpeg
 static_ffmpeg.add_paths()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -29,44 +29,38 @@ class VideoRequest(BaseModel):
 def home():
     return {"status": "API en ligne"}
 
+def cleanup_file(filepath: str):
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
 @app.post("/cut")
-def cut_video(data: VideoRequest):
+def cut_video(data: VideoRequest, background_tasks: BackgroundTasks):
     output_dir = "downloads"
     os.makedirs(output_dir, exist_ok=True)
-    raw_video_path = os.path.join(output_dir, "input.mp4")
-    
-    if os.path.exists(raw_video_path):
-        os.remove(raw_video_path)
+    output_clip_path = os.path.join(output_dir, f"clip_{os.urandom(4).hex()}.mp4")
 
+    start_sec = data.start_min * 60
+
+    # yt-dlp découpe directement pendant le téléchargement (beaucoup plus rapide)
     ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        'outtmpl': raw_video_path,
+        'format': 'best[ext=mp4]/best',
+        'outtmpl': output_clip_path,
+        'download_ranges': yt_dlp.utils.download_range_func(None, [(start_sec, start_sec + data.segment_duration)]),
+        'force_keyframes_at_cuts': True,
         'quiet': True
     }
-    
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([data.url])
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Erreur de téléchargement YouTube: {str(e)}")
-
-    start_sec = data.start_min * 60
-    duration_sec = data.segment_duration
-    output_clip_path = os.path.join(output_dir, "clip.mp4")
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", str(start_sec),
-        "-i", raw_video_path,
-        "-t", str(duration_sec),
-        "-c", "copy",
-        output_clip_path
-    ]
-    
-    subprocess.run(cmd, check=True)
+        raise HTTPException(status_code=400, detail=f"Erreur lors du traitement: {str(e)}")
 
     if not os.path.exists(output_clip_path):
-        raise HTTPException(status_code=500, detail="Échec du traitement vidéo par ffmpeg.")
+        raise HTTPException(status_code=500, detail="Échec de la génération de la vidéo.")
+
+    # Supprime le fichier du serveur après l'envoi
+    background_tasks.add_task(cleanup_file, output_clip_path)
 
     return FileResponse(
         path=output_clip_path,
