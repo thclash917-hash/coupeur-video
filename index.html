@@ -3,125 +3,381 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Découpeur Vidéo Shorts</title>
+  <title>Découpeur Vidéo Shorts - Pro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+      --card-bg: rgba(30, 41, 59, 0.75);
+      --card-border: rgba(255, 255, 255, 0.1);
+      --accent-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+      --accent-hover: linear-gradient(135deg, #4f46e5 0%, #9333ea 50%, #db2777 100%);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --input-bg: rgba(15, 23, 42, 0.6);
+      --input-border: rgba(255, 255, 255, 0.12);
+      --input-focus: #818cf8;
+      --success-color: #10b981;
+      --error-color: #f43f5e;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
     body {
-      font-family: Arial, sans-serif;
-      background-color: #f4f6f9;
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
       display: flex;
       justify-content: center;
       align-items: center;
-      min-height: 100vh;
-      margin: 0;
+      padding: 20px;
     }
-    .card {
-      background: #fff;
-      padding: 30px;
-      border-radius: 12px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+
+    .container {
       width: 100%;
-      max-width: 450px;
+      max-width: 520px;
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 24px;
+      padding: 36px 30px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     }
-    h2 {
+
+    .header {
       text-align: center;
-      color: #333;
+      margin-bottom: 28px;
+    }
+
+    .header-icon {
+      font-size: 42px;
+      display: inline-block;
+      margin-bottom: 8px;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 800;
+      background: var(--accent-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .form-group {
       margin-bottom: 20px;
     }
-    .form-group {
-      margin-bottom: 15px;
-    }
+
     label {
       display: block;
-      font-weight: bold;
-      margin-bottom: 5px;
-      color: #555;
+      font-size: 13px;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
-    input[type="file"], input[type="number"], select {
-      width: 100%;
-      padding: 10px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      box-sizing: border-box;
-    }
-    button {
-      width: 100%;
-      padding: 12px;
-      background-color: #007bff;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      font-size: 16px;
-      font-weight: bold;
+
+    /* Custom File Input */
+    .file-drop-zone {
+      position: relative;
+      border: 2px dashed var(--input-border);
+      border-radius: 16px;
+      padding: 24px 16px;
+      text-align: center;
+      background: var(--input-bg);
       cursor: pointer;
+      transition: all 0.25s ease;
+    }
+
+    .file-drop-zone:hover, .file-drop-zone.dragover {
+      border-color: var(--input-focus);
+      background: rgba(99, 102, 241, 0.1);
+    }
+
+    .file-drop-zone input[type="file"] {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .file-zone-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+      color: #818cf8;
+    }
+
+    .file-zone-text {
+      font-size: 14px;
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    .file-zone-subtext {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .file-name-display {
+      display: none;
+      margin-top: 8px;
+      font-size: 13px;
+      color: #38bdf8;
+      font-weight: 600;
+      word-break: break-all;
+    }
+
+    /* Form Grid */
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    select, input[type="number"] {
+      width: 100%;
+      padding: 12px 14px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 12px;
+      color: var(--text-main);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    select:focus, input[type="number"]:focus {
+      border-color: var(--input-focus);
+      box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
+    }
+
+    select option {
+      background: #0f172a;
+      color: #fff;
+    }
+
+    /* Submit Button */
+    .btn-submit {
+      width: 100%;
+      padding: 15px;
+      background: var(--accent-gradient);
+      border: none;
+      border-radius: 14px;
+      color: white;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 10px 20px -5px rgba(168, 85, 247, 0.4);
       margin-top: 10px;
     }
-    button:hover {
-      background-color: #0056b3;
+
+    .btn-submit:hover:not(:disabled) {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 14px 25px -5px rgba(168, 85, 247, 0.5);
     }
-    button:disabled {
-      background-color: #aaa;
+
+    .btn-submit:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
     }
-    #status {
-      margin-top: 15px;
+
+    /* Progress Section */
+    .progress-wrapper {
+      display: none;
+      margin-top: 24px;
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 16px;
+      padding: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .progress-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-size: 13px;
+    }
+
+    .progress-status {
+      font-weight: 600;
+      color: #cbd5e1;
+    }
+
+    .progress-percent {
+      font-weight: 700;
+      color: #818cf8;
+    }
+
+    .progress-bar-container {
+      width: 100%;
+      height: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-bar-fill {
+      width: 0%;
+      height: 100%;
+      background: var(--accent-gradient);
+      border-radius: 20px;
+      transition: width 0.2s ease-out;
+    }
+
+    .progress-bar-fill.processing {
+      width: 100% !important;
+      background: linear-gradient(90deg, #6366f1, #a855f7, #ec4899, #6366f1);
+      background-size: 200% 100%;
+      animation: gradient-slide 1.5s linear infinite;
+    }
+
+    @keyframes gradient-slide {
+      0% { background-position: 0% 0%; }
+      100% { background-position: 200% 0%; }
+    }
+
+    /* Alert Message */
+    .status-alert {
+      display: none;
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
       text-align: center;
-      font-weight: bold;
     }
-    .error { color: #d9534f; }
-    .success { color: #5cb85c; }
-    .loading { color: #0275d8; }
+
+    .status-alert.error {
+      background: rgba(244, 63, 94, 0.15);
+      border: 1px solid rgba(244, 63, 94, 0.3);
+      color: var(--error-color);
+    }
+
+    .status-alert.success {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: var(--success-color);
+    }
   </style>
 </head>
 <body>
 
-<div class="card">
-  <h2>✂️ Découper une vidéo MP4</h2>
+<div class="container">
+  <div class="header">
+    <div class="header-icon">🎬</div>
+    <h1>Studio Découpe Vidéo</h1>
+    <p class="subtitle">Extrais des Shorts/Reels à partir de tes vidéos MP4</p>
+  </div>
+
   <form id="cutForm">
     <div class="form-group">
-      <label for="videoFile">Sélectionner la vidéo (MP4) :</label>
-      <input type="file" id="videoFile" accept="video/mp4,video/*" required>
+      <label>Fichier vidéo source</label>
+      <div class="file-drop-zone" id="dropZone">
+        <input type="file" id="videoFile" accept="video/mp4,video/*" required>
+        <div class="file-zone-icon">📁</div>
+        <div class="file-zone-text">Clique ou glisse une vidéo MP4 ici</div>
+        <div class="file-zone-subtext">Fichiers vidéo volumineux acceptés</div>
+        <div class="file-name-display" id="fileNameDisplay"></div>
+      </div>
     </div>
 
     <div class="form-group">
-      <label for="duration">Durée de l'extrait :</label>
+      <label for="duration">Durée de l'extrait</label>
       <select id="duration">
-        <option value="15">15 secondes</option>
-        <option value="30">30 secondes</option>
-        <option value="60">60 secondes</option>
+        <option value="15">⚡ 15 secondes (Short rapide)</option>
+        <option value="30" selected>🔥 30 secondes (Standard)</option>
+        <option value="60">🎥 60 secondes (Long Format)</option>
       </select>
     </div>
 
-    <div class="form-group">
-      <label for="startMin">Minute de début :</label>
-      <input type="number" id="startMin" value="0" min="0" required>
+    <div class="form-row form-group">
+      <div>
+        <label for="startMin">Min. Début</label>
+        <input type="number" id="startMin" value="0" min="0" required>
+      </div>
+      <div>
+        <label for="endMin">Min. Fin</label>
+        <input type="number" id="endMin" value="10" min="1" required>
+      </div>
     </div>
 
-    <div class="form-group">
-      <label for="endMin">Minute de fin :</label>
-      <input type="number" id="endMin" value="10" min="1" required>
-    </div>
-
-    <button type="submit" id="submitBtn">Lancer le découpage</button>
+    <button type="submit" class="btn-submit" id="submitBtn">✂️ Lancer le découpage</button>
   </form>
 
-  <div id="status"></div>
+  <!-- Section barre de progression -->
+  <div class="progress-wrapper" id="progressWrapper">
+    <div class="progress-info">
+      <span class="progress-status" id="progressStatus">Envoi de la vidéo...</span>
+      <span class="progress-percent" id="progressPercent">0%</span>
+    </div>
+    <div class="progress-bar-container">
+      <div class="progress-bar-fill" id="progressBarFill"></div>
+    </div>
+  </div>
+
+  <div class="status-alert" id="statusAlert"></div>
 </div>
 
 <script>
   const API_URL = "https://coupeur-video.onrender.com/cut";
 
-  document.getElementById("cutForm").addEventListener("submit", async (e) => {
+  const fileInput = document.getElementById("videoFile");
+  const fileNameDisplay = document.getElementById("fileNameDisplay");
+  const dropZone = document.getElementById("dropZone");
+
+  // Affichage du nom du fichier sélectionné
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files.length > 0) {
+      const file = fileInput.files[0];
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      fileNameDisplay.style.display = "block";
+      fileNameDisplay.innerText = `📄 ${file.name} (${sizeMB} Mo)`;
+    }
+  });
+
+  // Gestion du Formulaire
+  document.getElementById("cutForm").addEventListener("submit", (e) => {
     e.preventDefault();
 
-    const fileInput = document.getElementById("videoFile");
     const duration = document.getElementById("duration").value;
     const startMin = document.getElementById("startMin").value;
     const endMin = document.getElementById("endMin").value;
     const submitBtn = document.getElementById("submitBtn");
-    const statusDiv = document.getElementById("status");
+    const progressWrapper = document.getElementById("progressWrapper");
+    const progressStatus = document.getElementById("progressStatus");
+    const progressPercent = document.getElementById("progressPercent");
+    const progressBarFill = document.getElementById("progressBarFill");
+    const statusAlert = document.getElementById("statusAlert");
 
     if (!fileInput.files[0]) {
-      statusDiv.className = "error";
-      statusDiv.innerText = "Veuillez sélectionner un fichier vidéo.";
+      showAlert("Veuillez sélectionner un fichier vidéo.", "error");
       return;
     }
 
@@ -131,39 +387,81 @@
     formData.append("start_min", startMin);
     formData.append("end_min", endMin);
 
+    // Reinitialisation des vues
+    statusAlert.style.display = "none";
+    progressWrapper.style.display = "block";
+    progressBarFill.classList.remove("processing");
+    progressBarFill.style.width = "0%";
+    progressPercent.innerText = "0%";
+    progressStatus.innerText = "📤 Téléversement de la vidéo...";
     submitBtn.disabled = true;
-    statusDiv.className = "loading";
-    statusDiv.innerText = "Envoi de la vidéo et découpage en cours...";
 
-    try {
-      const response = await fetch(API_URL, {
-        method: "POST",
-        body: formData
-      });
+    // Utilisation de XMLHttpRequest pour suivre la progression de l'upload
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", API_URL, true);
+    xhr.responseType = "blob";
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Erreur lors du traitement.");
+    // 1. Progression du téléversement du fichier (client -> serveur)
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percentComplete = Math.round((event.loaded / event.total) * 100);
+        progressBarFill.style.width = percentComplete + "%";
+        progressPercent.innerText = percentComplete + "%";
+
+        if (percentComplete === 100) {
+          progressStatus.innerText = "⚡ Découpage vidéo en cours (FFmpeg)...";
+          progressPercent.innerText = "Traitement";
+          progressBarFill.classList.add("processing");
+        }
       }
+    };
 
-      const blob = await response.blob();
-      const downloadUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = downloadUrl;
-      a.download = `extrait_${duration}s.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      statusDiv.className = "success";
-      statusDiv.innerText = "Découpage réussi ! Le téléchargement a démarré.";
-    } catch (err) {
-      statusDiv.className = "error";
-      statusDiv.innerText = "Erreur : " + err.message;
-    } finally {
+    // 2. Traitement du retour serveur
+    xhr.onload = () => {
       submitBtn.disabled = false;
-    }
+      progressWrapper.style.display = "none";
+
+      if (xhr.status === 200) {
+        const blob = xhr.response;
+        const downloadUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        a.download = `extrait_${duration}s.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        showAlert("🎉 Découpage réussi ! Le fichier s'est téléchargé.", "success");
+      } else {
+        // En cas d'erreur serveur
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const errObj = JSON.parse(reader.result);
+            showAlert("Erreur : " + (errObj.detail || "Échec du découpage."), "error");
+          } catch {
+            showAlert("Une erreur serveur est survenue.", "error");
+          }
+        };
+        reader.readAsText(xhr.response);
+      }
+    };
+
+    xhr.onerror = () => {
+      submitBtn.disabled = false;
+      progressWrapper.style.display = "none";
+      showAlert("Erreur de connexion avec le serveur.", "error");
+    };
+
+    xhr.send(formData);
   });
+
+  function showAlert(msg, type) {
+    const statusAlert = document.getElementById("statusAlert");
+    statusAlert.className = `status-alert ${type}`;
+    statusAlert.innerText = msg;
+    statusAlert.style.display = "block";
+  }
 </script>
 
 </body>
