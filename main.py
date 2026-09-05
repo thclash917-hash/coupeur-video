@@ -95,6 +95,8 @@ def cut_video(
 
         "outtmpl": output_clip_path,
 
+        "cookiefile": "/etc/secrets/cookies.txt",
+
         "download_ranges": yt_dlp.utils.download_range_func(
             None,
             [
