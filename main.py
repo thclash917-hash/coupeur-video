@@ -17,9 +17,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 @app.get("/")
 async def root():
     return {"status": "online", "message": "Le serveur est bien réveillé !"}
+
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "mon_super_secret_123")
 
 @app.post("/cut")
@@ -33,11 +35,13 @@ async def cut_video(
     quality: str = Form("original"),
     add_subs: str = Form("false"),  # Gardé en paramètre pour éviter l'erreur si ton HTML l'envoie encore
 ):
-    input_path = f"temp_{file.filename}"
+    # 1. Génération de l'ID unique en premier pour isoler chaque appareil
+    unique_id = str(uuid.uuid4())[:8]
+    input_path = f"temp_{unique_id}_{file.filename}"
     output_dir = "output_clips"
     os.makedirs(output_dir, exist_ok=True)
     
-    # 1. Sauvegarder la vidéo reçue temporairement
+    # Sauvegarde de la vidéo reçue temporairement
     with open(input_path, "wb") as buffer:
         buffer.write(await file.read())
 
@@ -56,8 +60,7 @@ async def cut_video(
 
     vf_arg = ",".join(filter_chains) if filter_chains else None
 
-    # 3. Découpage des extraits en boucle selon max_clips avec ID unique (preset ultrafast pour une vitesse maximale)
-    unique_id = str(uuid.uuid4())[:8]
+    # 3. Découpage des extraits en boucle selon max_clips (preset ultrafast pour une vitesse maximale)
     start_sec = start_min * 60
     output_files = []
 
@@ -88,7 +91,7 @@ async def cut_video(
             if os.path.exists(file_path):
                 zipf.write(file_path, arcname=arc_name)
 
-    # Nettoyage du fichier source temporaire
+    # Nettoyage du fichier source temporaire unique
     if os.path.exists(input_path):
         os.remove(input_path)
 
