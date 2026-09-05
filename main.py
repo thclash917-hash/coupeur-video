@@ -1,11 +1,21 @@
 import os
 import zipfile
 import shutil
+import subprocess
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
-import subprocess
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+# 1. Configuration obligatoire des CORS pour autoriser GitHub Pages
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.post("/cut")
 async def cut_video(
@@ -16,6 +26,10 @@ async def cut_video(
     end_min: int = Form(...)
 ):
     temp_dir = "temp_clips"
+    
+    # Nettoyage préventif
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
     os.makedirs(temp_dir, exist_ok=True)
     
     input_path = os.path.join(temp_dir, file.filename)
@@ -26,9 +40,13 @@ async def cut_video(
     end_sec = end_min * 60
     total_available_time = end_sec - start_sec
 
-    # Calcul du pas d'espacement pour garantir des extraits différents
+    if total_available_time <= 0:
+        raise HTTPException(status_code=400, detail="La minute de fin doit être supérieure au début.")
+
+    # Calcul du pas d'espacement entre chaque extrait
     if max_clips > 1:
-        step = max(segment_duration, (total_available_time - segment_duration) / (max_clips - 1))
+        step = (total_available_time - segment_duration) / (max_clips - 1)
+        step = max(step, segment_duration)
     else:
         step = 0
 
@@ -37,21 +55,19 @@ async def cut_video(
     for i in range(max_clips):
         clip_start = start_sec + (i * step)
         
-        # Sécurité pour ne pas dépasser la fin spécifiée
-        if clip_start + segment_duration > end_sec:
+        if clip_start + segment_duration > end_sec and i > 0:
             break
 
         output_filename = f"extrait_{i+1}.mp4"
         output_path = os.path.join(temp_dir, output_filename)
 
-        # Commande FFmpeg ré-encodée proprement
+        # Utilisation de "-c copy" pour découper instantanément sans faire sauter le serveur
         cmd = [
             "ffmpeg", "-y",
-            "-ss", str(clip_start),
+            "-ss", str(int(clip_start)),
             "-i", input_path,
             "-t", str(segment_duration),
-            "-c:v", "libx264",
-            "-c:a", "aac",
+            "-c", "copy",
             output_path
         ]
         
@@ -61,13 +77,11 @@ async def cut_video(
             generated_files.append(output_path)
 
     if not generated_files:
-        shutil.rmtree(temp_dir)
-        raise HTTPException(status_code=400, detail="Plage horaire trop courte pour générer ces extraits.")
+        raise HTTPException(status_code=400, detail="Impossible de générer des extraits sur cette plage.")
 
-    # Création du fichier ZIP avec tous les extraits uniques
     zip_path = os.path.join(temp_dir, "extraits.zip")
     with zipfile.ZipFile(zip_path, 'w') as zipf:
         for f in generated_files:
             zipf.write(f, os.path.basename(f))
 
-    return FileResponse(zip_path, media_type="application/zip", filename="extraits_30s.zip")
+    return FileResponse(zip_path, media_type="application/zip", filename="extraits.zip")
