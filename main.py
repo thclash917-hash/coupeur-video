@@ -65,10 +65,12 @@ os.makedirs(BASE_DIR, exist_ok=True)
 
 @app.get("/")
 async def root():
-return {
-"status": "online",
-"message": "Le serveur est bien réveillé !"
-}
+    return {
+        "status": "online",
+        "message": "Le serveur est bien réveillé !",
+        "max_concurrent_jobs": MAX_CONCURRENT_JOBS,
+        "cleanup_age_hours": CLEANUP_AGE_HOURS,
+    }
 
 # ============================================================
 
