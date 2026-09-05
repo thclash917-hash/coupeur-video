@@ -41,13 +41,19 @@ def cut_video(data: VideoRequest, background_tasks: BackgroundTasks):
 
     start_sec = data.start_min * 60
 
-    # yt-dlp découpe directement pendant le téléchargement (beaucoup plus rapide)
     ydl_opts = {
         'format': 'best[ext=mp4]/best',
         'outtmpl': output_clip_path,
         'download_ranges': yt_dlp.utils.download_range_func(None, [(start_sec, start_sec + data.segment_duration)]),
         'force_keyframes_at_cuts': True,
-        'quiet': True
+        'quiet': True,
+        'nocheckcertificate': True,
+        'addheaders': 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web']
+            }
+        }
     }
 
     try:
@@ -59,7 +65,6 @@ def cut_video(data: VideoRequest, background_tasks: BackgroundTasks):
     if not os.path.exists(output_clip_path):
         raise HTTPException(status_code=500, detail="Échec de la génération de la vidéo.")
 
-    # Supprime le fichier du serveur après l'envoi
     background_tasks.add_task(cleanup_file, output_clip_path)
 
     return FileResponse(
