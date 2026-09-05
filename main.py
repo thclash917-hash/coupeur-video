@@ -33,7 +33,9 @@ async def cut_video(
     segment_duration: int = Form(...),
     max_clips: int = Form(...),
     start_min: int = Form(...),
-    end_min: int = Form(...)
+    end_min: int = Form(...),
+    aspect_ratio: str = Form("original"),
+    quality: str = Form("original")
 ):
     temp_dir = "temp_clips"
     
@@ -45,7 +47,6 @@ async def cut_video(
     with open(input_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    # Récupération de la durée réelle de la vidéo en secondes
     actual_video_duration = get_video_duration(input_path)
 
     start_sec = start_min * 60
@@ -64,29 +65,60 @@ async def cut_video(
 
     generated_files = []
 
+    # Construction des filtres vidéo (format 9:16 et Résolution)
+    vf_filters = []
+
+    if aspect_ratio == "9:16":
+        # Format vertical Shorts/Reels (Recadrage centré)
+        vf_filters.append("crop=ih*(9/16):ih")
+
+    # Gestion de la résolution
+    if quality == "720p":
+        vf_filters.append("scale=-2:720")
+    elif quality == "1080p":
+        vf_filters.append("scale=-2:1080")
+    elif quality == "4k":
+        vf_filters.append("scale=-2:2160")
+
+    is_custom = len(vf_filters) > 0
+
     for i in range(max_clips):
         clip_start = start_sec + (i * step)
         
-        # Stop si le début du clip + la durée dépasse la fin réelle
         if clip_start + segment_duration > actual_video_duration:
             break
 
         output_filename = f"extrait_{i+1}.mp4"
         output_path = os.path.join(temp_dir, output_filename)
 
-        cmd = [
-            "ffmpeg", "-y",
-            "-ss", str(int(clip_start)),
-            "-i", input_path,
-            "-t", str(segment_duration),
-            "-c", "copy",
-            output_path
-        ]
+        if not is_custom:
+            # Sans ré-encodage : Ultra rapide + Qualité identique à l'originale
+            cmd = [
+                "ffmpeg", "-y",
+                "-ss", str(int(clip_start)),
+                "-i", input_path,
+                "-t", str(segment_duration),
+                "-c", "copy",
+                output_path
+            ]
+        else:
+            # Ré-encodage nécessaire pour appliquer les filtres (Format/Résolution)
+            cmd = [
+                "ffmpeg", "-y",
+                "-ss", str(int(clip_start)),
+                "-i", input_path,
+                "-t", str(segment_duration),
+                "-vf", ",".join(vf_filters),
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-crf", "18",  # Qualité visuelle élevée
+                "-c:a", "aac",
+                output_path
+            ]
         
         subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
-        # On ne garde le fichier que s'il est valide (> 100 Ko)
-        if os.path.exists(output_path) and os.path.getsize(output_path) > 100000:
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 50000:
             generated_files.append(output_path)
 
     if not generated_files:
