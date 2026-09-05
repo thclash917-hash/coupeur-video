@@ -102,7 +102,7 @@ async def cut_video(
 
     vf_arg = ",".join(filter_chains) if filter_chains else None
 
-    # 4. Découpage des extraits en boucle selon max_clips avec ID unique
+    # 4. Découpage des extraits en boucle selon max_clips avec ID unique (preset ultrafast pour la vitesse)
     unique_id = str(uuid.uuid4())[:8]
     start_sec = start_min * 60
     output_files = []
@@ -117,7 +117,7 @@ async def cut_video(
         if vf_arg:
             cmd.extend(["-vf", vf_arg])
         
-        cmd.extend(["-c:v", "libx264", "-preset", "fast", "-c:a", "aac", output_filepath])
+        cmd.extend(["-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", output_filepath])
 
         try:
             subprocess.run(cmd, check=True)
