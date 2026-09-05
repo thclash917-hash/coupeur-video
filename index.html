@@ -71,8 +71,18 @@
                     body: JSON.stringify(payload)
                 });
 
-                const result = await response.json();
-                status.innerText = "Succès ! " + (result.message || "Vidéo traitée.");
+               if (!response.ok) throw new Error("Erreur lors de la découpe");
+
+const blob = await response.blob();
+const downloadUrl = window.URL.createObjectURL(blob);
+const a = document.createElement('a');
+a.href = downloadUrl;
+a.download = "extrait.mp4";
+document.body.appendChild(a);
+a.click();
+a.remove();
+
+status.innerText = "Téléchargement terminé !";
             } catch (err) {
                 status.innerText = "Erreur de connexion avec le serveur.";
             }
