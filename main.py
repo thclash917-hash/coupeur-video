@@ -69,7 +69,8 @@ async def cut_video(
         if vf_arg:
             cmd.extend(["-vf", vf_arg])
         
-        cmd.extend(["-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", output_filepath])
+        # Ajout de "-r", "30" pour bloquer le framerate et empêcher l'explosion des frames
+        cmd.extend(["-r", "30", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", output_filepath])
 
         try:
             subprocess.run(cmd, check=True)
