@@ -50,45 +50,42 @@ async def cut_video(
         with open(input_video_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur lors de la réception du fichier : {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur réception : {str(e)}")
 
     start_sec = start_min * 60
     end_sec = end_min * 60
 
     if start_sec >= end_sec:
         cleanup_file(input_video_path)
-        raise HTTPException(status_code=400, detail="La minute de début doit être inférieure à la minute de fin.")
+        raise HTTPException(status_code=400, detail="Minute de début invalide.")
 
     if segment_duration <= 0:
         cleanup_file(input_video_path)
-        raise HTTPException(status_code=400, detail="La durée du segment doit être supérieure à 0.")
+        raise HTTPException(status_code=400, detail="Durée invalide.")
 
-    # 2. Découpage vidéo ultra-rapide avec FFmpeg
+    # 2. Découpage instantané sans réencodage (-c copy)
     try:
         cmd = [
             "ffmpeg",
-            "-y",
             "-ss", str(start_sec),
             "-i", input_video_path,
             "-t", str(segment_duration),
-            "-c:v", "libx264",
-            "-c:a", "aac",
-            "-strict", "experimental",
-            output_clip_path
+            "-c", "copy",
+            output_clip_path,
+            "-y"
         ]
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
         cleanup_file(input_video_path)
         cleanup_file(output_clip_path)
-        raise HTTPException(status_code=500, detail=f"Erreur de traitement FFmpeg : {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur FFmpeg : {str(e)}")
 
-    # Suppression du fichier source lourd dès le découpage terminé
+    # Suppression du fichier source lourd
     cleanup_file(input_video_path)
 
     if not os.path.exists(output_clip_path):
         raise HTTPException(status_code=500, detail="Échec du découpage.")
 
-    # Nettoyage de l'extrait après envoi au client
     background_tasks.add_task(cleanup_file, output_clip_path)
 
     return FileResponse(
