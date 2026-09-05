@@ -17,7 +17,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+@app.get("/")
+async def root():
+    return {"status": "online", "message": "Le serveur est bien réveillé !"}
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "mon_super_secret_123")
 
 @app.post("/cut")
