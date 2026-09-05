@@ -1,1 +1,1844 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Découpeur Vidéo Shorts - Pro</title>
 
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <link
+    href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  >
+
+  <!-- Google Identity Services SDK -->
+  <script
+    src="https://accounts.google.com/gsi/client"
+    async
+    defer
+  ></script>
+
+  <style>
+
+    :root {
+      --bg-gradient: linear-gradient(
+        135deg,
+        #0f172a 0%,
+        #1e1b4b 50%,
+        #0f172a 100%
+      );
+
+      --card-bg: rgba(30, 41, 59, 0.75);
+      --card-border: rgba(255, 255, 255, 0.1);
+
+      --accent-gradient: linear-gradient(
+        135deg,
+        #6366f1 0%,
+        #a855f7 50%,
+        #ec4899 100%
+      );
+
+      --accent-hover: linear-gradient(
+        135deg,
+        #4f46e5 0%,
+        #9333ea 50%,
+        #db2777 100%
+      );
+
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+
+      --input-bg: rgba(15, 23, 42, 0.6);
+      --input-border: rgba(255, 255, 255, 0.12);
+      --input-focus: #818cf8;
+
+      --success-color: #10b981;
+      --error-color: #f43f5e;
+    }
+
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+
+    body {
+      background: var(--bg-gradient);
+      color: var(--text-main);
+
+      min-height: 100vh;
+
+      display: flex;
+      justify-content: center;
+      align-items: center;
+
+      padding: 20px;
+    }
+
+
+    .container {
+      width: 100%;
+      max-width: 520px;
+
+      background: var(--card-bg);
+
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+
+      border: 1px solid var(--card-border);
+
+      border-radius: 24px;
+
+      padding: 36px 30px;
+
+      box-shadow:
+        0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+
+
+    .header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+
+    .header-icon {
+      font-size: 42px;
+      display: inline-block;
+      margin-bottom: 8px;
+
+      animation:
+        float 3s ease-in-out infinite;
+    }
+
+
+    @keyframes float {
+
+      0%, 100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-6px);
+      }
+
+    }
+
+
+    h1 {
+      font-size: 26px;
+      font-weight: 800;
+
+      background: var(--accent-gradient);
+
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+
+      letter-spacing: -0.5px;
+
+      margin-bottom: 6px;
+    }
+
+
+    .subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+
+    /* =====================================================
+       AUTH
+    ===================================================== */
+
+    .auth-box {
+      display: flex;
+
+      flex-direction: column;
+
+      align-items: center;
+
+      gap: 16px;
+
+      padding: 20px 0;
+    }
+
+
+    .user-card {
+      display: none;
+
+      align-items: center;
+
+      justify-content: space-between;
+
+      background:
+        rgba(15, 23, 42, 0.5);
+
+      border:
+        1px solid var(--card-border);
+
+      border-radius: 16px;
+
+      padding: 10px 16px;
+
+      margin-bottom: 20px;
+    }
+
+
+    .user-info {
+      display: flex;
+
+      align-items: center;
+
+      gap: 10px;
+    }
+
+
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+
+      border-radius: 50%;
+    }
+
+
+    .user-name {
+      font-size: 13px;
+
+      font-weight: 600;
+    }
+
+
+    .btn-logout {
+      background: transparent;
+
+      border:
+        1px solid var(--card-border);
+
+      color: var(--text-muted);
+
+      padding: 6px 12px;
+
+      border-radius: 8px;
+
+      font-size: 12px;
+
+      cursor: pointer;
+
+      transition: all 0.2s;
+    }
+
+
+    .btn-logout:hover {
+      background:
+        rgba(244, 63, 94, 0.2);
+
+      color:
+        var(--error-color);
+
+      border-color:
+        rgba(244, 63, 94, 0.4);
+    }
+
+
+    #appContent {
+      display: none;
+    }
+
+
+    /* =====================================================
+       FORM
+    ===================================================== */
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+
+    label {
+      display: block;
+
+      font-size: 13px;
+
+      font-weight: 600;
+
+      color: #cbd5e1;
+
+      margin-bottom: 8px;
+
+      text-transform: uppercase;
+
+      letter-spacing: 0.5px;
+    }
+
+
+    /* =====================================================
+       FILE INPUT
+    ===================================================== */
+
+    .file-drop-zone {
+      position: relative;
+
+      border:
+        2px dashed var(--input-border);
+
+      border-radius: 16px;
+
+      padding: 24px 16px;
+
+      text-align: center;
+
+      background:
+        var(--input-bg);
+
+      cursor: pointer;
+
+      transition:
+        all 0.25s ease;
+    }
+
+
+    .file-drop-zone:hover,
+    .file-drop-zone.dragover {
+
+      border-color:
+        var(--input-focus);
+
+      background:
+        rgba(99, 102, 241, 0.1);
+    }
+
+
+    .file-drop-zone input[type="file"] {
+
+      position: absolute;
+
+      top: 0;
+      left: 0;
+
+      width: 100%;
+      height: 100%;
+
+      opacity: 0;
+
+      cursor: pointer;
+    }
+
+
+    .file-zone-icon {
+
+      font-size: 32px;
+
+      margin-bottom: 8px;
+
+      color: #818cf8;
+    }
+
+
+    .file-zone-text {
+
+      font-size: 14px;
+
+      color: var(--text-main);
+
+      font-weight: 600;
+    }
+
+
+    .file-zone-subtext {
+
+      font-size: 12px;
+
+      color: var(--text-muted);
+
+      margin-top: 4px;
+    }
+
+
+    .file-name-display {
+
+      display: none;
+
+      margin-top: 8px;
+
+      font-size: 13px;
+
+      color: #38bdf8;
+
+      font-weight: 600;
+
+      word-break: break-all;
+    }
+
+
+    /* =====================================================
+       FORM GRID
+    ===================================================== */
+
+    .form-row {
+
+      display: grid;
+
+      grid-template-columns:
+        1fr 1fr;
+
+      gap: 14px;
+    }
+
+
+    select,
+    input[type="number"],
+    input[type="password"] {
+
+      width: 100%;
+
+      padding: 12px 14px;
+
+      background:
+        var(--input-bg);
+
+      border:
+        1px solid var(--input-border);
+
+      border-radius: 12px;
+
+      color: var(--text-main);
+
+      font-size: 14px;
+
+      outline: none;
+
+      transition:
+        border-color 0.2s;
+    }
+
+
+    select:focus,
+    input[type="number"]:focus,
+    input[type="password"]:focus {
+
+      border-color:
+        var(--input-focus);
+
+      box-shadow:
+        0 0 0 3px
+        rgba(129, 140, 248, 0.2);
+    }
+
+
+    select option {
+
+      background: #0f172a;
+
+      color: #fff;
+    }
+
+
+    /* =====================================================
+       SUBMIT
+    ===================================================== */
+
+    .btn-submit {
+
+      width: 100%;
+
+      padding: 15px;
+
+      background:
+        var(--accent-gradient);
+
+      border: none;
+
+      border-radius: 14px;
+
+      color: white;
+
+      font-size: 16px;
+
+      font-weight: 700;
+
+      cursor: pointer;
+
+      transition:
+        all 0.3s ease;
+
+      box-shadow:
+        0 10px 20px -5px
+        rgba(168, 85, 247, 0.4);
+
+      margin-top: 10px;
+    }
+
+
+    .btn-submit:hover:not(:disabled) {
+
+      background:
+        var(--accent-hover);
+
+      transform:
+        translateY(-2px);
+
+      box-shadow:
+        0 14px 25px -5px
+        rgba(168, 85, 247, 0.5);
+    }
+
+
+    .btn-submit:disabled {
+
+      opacity: 0.5;
+
+      cursor: not-allowed;
+
+      transform: none;
+    }
+
+
+    /* =====================================================
+       PROGRESS
+    ===================================================== */
+
+    .progress-wrapper {
+
+      display: none;
+
+      margin-top: 24px;
+
+      background:
+        rgba(15, 23, 42, 0.5);
+
+      border-radius: 16px;
+
+      padding: 16px;
+
+      border:
+        1px solid
+        rgba(255, 255, 255, 0.05);
+    }
+
+
+    .progress-info {
+
+      display: flex;
+
+      justify-content: space-between;
+
+      align-items: center;
+
+      margin-bottom: 10px;
+
+      font-size: 13px;
+    }
+
+
+    .progress-status {
+
+      font-weight: 600;
+
+      color: #cbd5e1;
+    }
+
+
+    .progress-percent {
+
+      font-weight: 700;
+
+      color: #818cf8;
+    }
+
+
+    .progress-bar-container {
+
+      width: 100%;
+
+      height: 10px;
+
+      background:
+        rgba(255, 255, 255, 0.1);
+
+      border-radius: 20px;
+
+      overflow: hidden;
+
+      position: relative;
+    }
+
+
+    .progress-bar-fill {
+
+      width: 0%;
+
+      height: 100%;
+
+      background:
+        var(--accent-gradient);
+
+      border-radius: 20px;
+
+      transition:
+        width 0.2s ease-out;
+    }
+
+
+    .progress-bar-fill.processing {
+
+      width: 100% !important;
+
+      background:
+        linear-gradient(
+          90deg,
+          #6366f1,
+          #a855f7,
+          #ec4899,
+          #6366f1
+        );
+
+      background-size: 200% 100%;
+
+      animation:
+        gradient-slide 1.5s linear infinite;
+    }
+
+
+    @keyframes gradient-slide {
+
+      0% {
+        background-position: 0% 0%;
+      }
+
+      100% {
+        background-position: 200% 0%;
+      }
+
+    }
+
+
+    /* =====================================================
+       ALERT
+    ===================================================== */
+
+    .status-alert {
+
+      display: none;
+
+      margin-top: 18px;
+
+      padding: 14px;
+
+      border-radius: 12px;
+
+      font-size: 13px;
+
+      font-weight: 600;
+
+      text-align: center;
+    }
+
+
+    .status-alert.error {
+
+      background:
+        rgba(244, 63, 94, 0.15);
+
+      border:
+        1px solid
+        rgba(244, 63, 94, 0.3);
+
+      color:
+        var(--error-color);
+    }
+
+
+    .status-alert.success {
+
+      background:
+        rgba(16, 185, 129, 0.15);
+
+      border:
+        1px solid
+        rgba(16, 185, 129, 0.3);
+
+      color:
+        var(--success-color);
+    }
+
+  </style>
+
+</head>
+
+
+<body>
+
+<div class="container">
+
+  <!-- =====================================================
+       HEADER
+  ====================================================== -->
+
+  <div class="header">
+
+    <div class="header-icon">
+      🎬
+    </div>
+
+    <h1>
+      Studio Découpe Vidéo
+    </h1>
+
+    <p class="subtitle">
+      Extrais des Shorts/Reels à partir de tes vidéos MP4
+    </p>
+
+  </div>
+
+
+  <!-- =====================================================
+       UTILISATEUR
+  ====================================================== -->
+
+  <div
+    class="user-card"
+    id="userCard"
+  >
+
+    <div class="user-info">
+
+      <img
+        id="userAvatar"
+        class="user-avatar"
+        src=""
+        alt="Avatar"
+      >
+
+      <span
+        id="userName"
+        class="user-name"
+      ></span>
+
+    </div>
+
+
+    <button
+      class="btn-logout"
+      id="logoutBtn"
+    >
+      Déconnexion
+    </button>
+
+  </div>
+
+
+  <!-- =====================================================
+       GOOGLE LOGIN
+  ====================================================== -->
+
+  <div
+    class="auth-box"
+    id="authBox"
+  >
+
+    <p class="subtitle">
+      Connecte-toi pour accéder à l'outil
+    </p>
+
+
+    <div
+      id="g_id_onload"
+
+      data-client_id="963038022021-qgckobqtnfvb00b8mkiqss3ef13l4vn2.apps.googleusercontent.com"
+
+      data-callback="handleCredentialResponse"
+
+      data-auto_prompt="false"
+    >
+    </div>
+
+
+    <div
+      class="g_id_signin"
+
+      data-type="standard"
+
+      data-size="large"
+
+      data-theme="outline"
+
+      data-text="sign_in_with"
+
+      data-shape="rectangular"
+
+      data-logo_alignment="left"
+    >
+    </div>
+
+  </div>
+
+
+  <!-- =====================================================
+       APPLICATION
+  ====================================================== -->
+
+  <div id="appContent">
+
+    <form id="cutForm">
+
+      <!-- FICHIER -->
+
+      <div class="form-group">
+
+        <label>
+          Fichier vidéo source
+        </label>
+
+
+        <div
+          class="file-drop-zone"
+          id="dropZone"
+        >
+
+          <input
+            type="file"
+            id="videoFile"
+            accept="video/mp4,video/*"
+            required
+          >
+
+
+          <div class="file-zone-icon">
+            📁
+          </div>
+
+
+          <div class="file-zone-text">
+            Clique ou glisse une vidéo MP4 ici
+          </div>
+
+
+          <div class="file-zone-subtext">
+            Fichiers vidéo volumineux acceptés
+          </div>
+
+
+          <div
+            class="file-name-display"
+            id="fileNameDisplay"
+          ></div>
+
+        </div>
+
+      </div>
+
+
+      <!-- FORMAT + QUALITÉ -->
+
+      <div class="form-row form-group">
+
+        <div>
+
+          <label for="aspectRatio">
+            Format d'image
+          </label>
+
+
+          <select id="aspectRatio">
+
+            <option
+              value="original"
+              selected
+            >
+              📺 Original
+            </option>
+
+
+            <option value="9:16">
+              📱 Vertical 9:16
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <div>
+
+          <label for="quality">
+            Qualité / Résolution
+          </label>
+
+
+          <select id="quality">
+
+            <option
+              value="original"
+              selected
+            >
+              ✨ Originale
+            </option>
+
+
+            <option value="720p">
+              ⚡ HD 720p
+            </option>
+
+
+            <option value="1080p">
+              🎥 Full HD 1080p
+            </option>
+
+
+            <option value="4k">
+              🌟 4K Ultra HD
+            </option>
+
+          </select>
+
+        </div>
+
+      </div>
+
+
+      <!-- DURÉE + NOMBRE -->
+
+      <div class="form-row form-group">
+
+        <div>
+
+          <label for="duration">
+            Durée de l'extrait
+          </label>
+
+
+          <select id="duration">
+
+            <option value="15">
+              ⚡ 15s
+            </option>
+
+
+            <option
+              value="30"
+              selected
+            >
+              🔥 30s
+            </option>
+
+
+            <option value="60">
+              🎥 60s
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <div>
+
+          <label for="maxClips">
+            Nombre d'extraits
+          </label>
+
+
+          <input
+            type="number"
+            id="maxClips"
+            value="1"
+            min="1"
+            max="25"
+            required
+          >
+
+        </div>
+
+      </div>
+
+
+      <!-- DÉBUT + FIN -->
+
+      <div class="form-row form-group">
+
+        <div>
+
+          <label for="startMin">
+            Min. Début
+          </label>
+
+
+          <input
+            type="number"
+            id="startMin"
+            value="0"
+            min="0"
+            required
+          >
+
+        </div>
+
+
+        <div>
+
+          <label for="endMin">
+            Min. Fin
+          </label>
+
+
+          <input
+            type="number"
+            id="endMin"
+            value="10"
+            min="1"
+            required
+          >
+
+        </div>
+
+      </div>
+
+
+      <!-- BOUTON -->
+
+      <button
+        type="submit"
+        class="btn-submit"
+        id="submitBtn"
+      >
+        ✂️ Lancer le découpage
+      </button>
+
+    </form>
+
+
+    <!-- =================================================
+         ADMIN
+    ================================================== -->
+
+    <div
+      style="
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid var(--card-border);
+      "
+    >
+
+      <label
+        style="
+          color: #f43f5e;
+          margin-bottom: 8px;
+        "
+      >
+        ⚙️ Maintenance Serveur (Admin)
+      </label>
+
+
+      <div
+        style="
+          display: flex;
+          gap: 10px;
+        "
+      >
+
+        <input
+          type="password"
+          id="adminToken"
+          placeholder="Mot de passe admin"
+          style="flex: 1;"
+        >
+
+
+        <button
+          type="button"
+          onclick="cleanServer()"
+          style="
+            background: #ef4444;
+            border: none;
+            border-radius: 12px;
+            color: white;
+            padding: 0 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s;
+            white-space: nowrap;
+          "
+        >
+          🧹 Vider
+        </button>
+
+      </div>
+
+    </div>
+
+
+    <!-- =================================================
+         PROGRESSION
+    ================================================== -->
+
+    <div
+      class="progress-wrapper"
+      id="progressWrapper"
+    >
+
+      <div class="progress-info">
+
+        <span
+          class="progress-status"
+          id="progressStatus"
+        >
+          Envoi de la vidéo...
+        </span>
+
+
+        <span
+          class="progress-percent"
+          id="progressPercent"
+        >
+          0%
+        </span>
+
+      </div>
+
+
+      <div class="progress-bar-container">
+
+        <div
+          class="progress-bar-fill"
+          id="progressBarFill"
+        ></div>
+
+      </div>
+
+    </div>
+
+
+    <div
+      class="status-alert"
+      id="statusAlert"
+    ></div>
+
+  </div>
+
+</div>
+
+
+<script>
+
+  // ========================================================
+  // URL RENDER
+  // ========================================================
+
+  const API_URL =
+    "https://coupeur-video.onrender.com/cut";
+
+  const CLEAN_URL =
+    "https://coupeur-video.onrender.com/clean";
+
+
+  // ========================================================
+  // ÉLÉMENTS
+  // ========================================================
+
+  const fileInput =
+    document.getElementById("videoFile");
+
+  const fileNameDisplay =
+    document.getElementById("fileNameDisplay");
+
+  const dropZone =
+    document.getElementById("dropZone");
+
+  const authBox =
+    document.getElementById("authBox");
+
+  const appContent =
+    document.getElementById("appContent");
+
+  const userCard =
+    document.getElementById("userCard");
+
+  const userName =
+    document.getElementById("userName");
+
+  const userAvatar =
+    document.getElementById("userAvatar");
+
+  const logoutBtn =
+    document.getElementById("logoutBtn");
+
+
+  // ========================================================
+  // GOOGLE JWT
+  // ========================================================
+
+  function parseJwt(token) {
+
+    const base64Url =
+      token.split('.')[1];
+
+    const base64 =
+      base64Url
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+
+
+    const jsonPayload =
+      decodeURIComponent(
+        window
+          .atob(base64)
+          .split('')
+          .map(c => {
+
+            return '%'
+              + ('00'
+              + c.charCodeAt(0)
+                .toString(16))
+                .slice(-2);
+
+          })
+          .join('')
+      );
+
+
+    return JSON.parse(
+      jsonPayload
+    );
+  }
+
+
+  // ========================================================
+  // GOOGLE LOGIN
+  // ========================================================
+
+  function handleCredentialResponse(
+    response
+  ) {
+
+    const user =
+      parseJwt(
+        response.credential
+      );
+
+
+    localStorage.setItem(
+      "user_token",
+      response.credential
+    );
+
+
+    showLoggedInState(
+      user
+    );
+  }
+
+
+  function showLoggedInState(
+    user
+  ) {
+
+    authBox.style.display =
+      "none";
+
+    appContent.style.display =
+      "block";
+
+    userCard.style.display =
+      "flex";
+
+    userName.innerText =
+      user.name || user.email;
+
+    userAvatar.src =
+      user.picture || "";
+  }
+
+
+  // ========================================================
+  // DÉCONNEXION
+  // ========================================================
+
+  logoutBtn.addEventListener(
+    "click",
+    () => {
+
+      localStorage.removeItem(
+        "user_token"
+      );
+
+
+      authBox.style.display =
+        "flex";
+
+      appContent.style.display =
+        "none";
+
+      userCard.style.display =
+        "none";
+    }
+  );
+
+
+  // ========================================================
+  // RESTAURATION SESSION
+  // ========================================================
+
+  window.addEventListener(
+    "load",
+    () => {
+
+      const savedToken =
+        localStorage.getItem(
+          "user_token"
+        );
+
+
+      if (savedToken) {
+
+        try {
+
+          const user =
+            parseJwt(
+              savedToken
+            );
+
+
+          showLoggedInState(
+            user
+          );
+
+        } catch {
+
+          localStorage.removeItem(
+            "user_token"
+          );
+        }
+      }
+    }
+  );
+
+
+  // ========================================================
+  // FICHIER SÉLECTIONNÉ
+  // ========================================================
+
+  fileInput.addEventListener(
+    "change",
+    () => {
+
+      if (
+        fileInput.files.length > 0
+      ) {
+
+        const file =
+          fileInput.files[0];
+
+
+        const sizeMB =
+          (
+            file.size
+            / (1024 * 1024)
+          ).toFixed(1);
+
+
+        fileNameDisplay.style.display =
+          "block";
+
+
+        fileNameDisplay.innerText =
+          `📄 ${file.name} (${sizeMB} Mo)`;
+      }
+    }
+  );
+
+
+  // ========================================================
+  // NETTOYAGE ADMIN
+  // ========================================================
+
+  async function cleanServer() {
+
+    const token =
+      document
+        .getElementById("adminToken")
+        .value;
+
+
+    if (!token) {
+
+      showAlert(
+        "Entre ton mot de passe admin pour nettoyer.",
+        "error"
+      );
+
+      return;
+    }
+
+
+    try {
+
+      const response =
+        await fetch(
+          CLEAN_URL,
+          {
+            method: "POST",
+
+            headers: {
+              "x-admin-token": token
+            }
+          }
+        );
+
+
+      const data =
+        await response.json();
+
+
+      if (response.ok) {
+
+        showAlert(
+          "✨ " + data.status,
+          "success"
+        );
+
+      } else {
+
+        showAlert(
+          "Erreur : "
+          + (
+            data.detail
+            || "Accès refusé"
+          ),
+          "error"
+        );
+      }
+
+
+    } catch (err) {
+
+      showAlert(
+        "Erreur de connexion avec le serveur.",
+        "error"
+      );
+    }
+  }
+
+
+  // ========================================================
+  // FORMULAIRE DE DÉCOUPE
+  // ========================================================
+
+  document
+    .getElementById("cutForm")
+    .addEventListener(
+      "submit",
+      (e) => {
+
+        e.preventDefault();
+
+
+        const duration =
+          document
+            .getElementById("duration")
+            .value;
+
+
+        const maxClips =
+          document
+            .getElementById("maxClips")
+            .value;
+
+
+        const startMin =
+          document
+            .getElementById("startMin")
+            .value;
+
+
+        const endMin =
+          document
+            .getElementById("endMin")
+            .value;
+
+
+        const aspectRatio =
+          document
+            .getElementById("aspectRatio")
+            .value;
+
+
+        const quality =
+          document
+            .getElementById("quality")
+            .value;
+
+
+        const submitBtn =
+          document
+            .getElementById("submitBtn");
+
+
+        const progressWrapper =
+          document
+            .getElementById("progressWrapper");
+
+
+        const progressStatus =
+          document
+            .getElementById("progressStatus");
+
+
+        const progressPercent =
+          document
+            .getElementById("progressPercent");
+
+
+        const progressBarFill =
+          document
+            .getElementById("progressBarFill");
+
+
+        const statusAlert =
+          document
+            .getElementById("statusAlert");
+
+
+        // --------------------------------------------------
+        // VÉRIFICATION FICHIER
+        // --------------------------------------------------
+
+        if (!fileInput.files[0]) {
+
+          showAlert(
+            "Veuillez sélectionner un fichier vidéo.",
+            "error"
+          );
+
+          return;
+        }
+
+
+        // --------------------------------------------------
+        // FORMDATA
+        // --------------------------------------------------
+
+        const formData =
+          new FormData();
+
+
+        formData.append(
+          "file",
+          fileInput.files[0]
+        );
+
+
+        formData.append(
+          "segment_duration",
+          duration
+        );
+
+
+        formData.append(
+          "max_clips",
+          maxClips
+        );
+
+
+        formData.append(
+          "start_min",
+          startMin
+        );
+
+
+        formData.append(
+          "end_min",
+          endMin
+        );
+
+
+        formData.append(
+          "aspect_ratio",
+          aspectRatio
+        );
+
+
+        formData.append(
+          "quality",
+          quality
+        );
+
+
+        // --------------------------------------------------
+        // PROGRESSION
+        // --------------------------------------------------
+
+        statusAlert.style.display =
+          "none";
+
+
+        progressWrapper.style.display =
+          "block";
+
+
+        progressBarFill.classList.remove(
+          "processing"
+        );
+
+
+        progressBarFill.style.width =
+          "0%";
+
+
+        progressPercent.innerText =
+          "0%";
+
+
+        progressStatus.innerText =
+          "📤 Téléversement de la vidéo...";
+
+
+        submitBtn.disabled =
+          true;
+
+
+        // --------------------------------------------------
+        // XHR
+        // --------------------------------------------------
+
+        const xhr =
+          new XMLHttpRequest();
+
+
+        xhr.open(
+          "POST",
+          API_URL,
+          true
+        );
+
+
+        xhr.responseType =
+          "blob";
+
+
+        // --------------------------------------------------
+        // PROGRESSION UPLOAD
+        // --------------------------------------------------
+
+        xhr.upload.onprogress =
+          (event) => {
+
+            if (
+              event.lengthComputable
+            ) {
+
+              const percentComplete =
+                Math.round(
+                  (
+                    event.loaded
+                    / event.total
+                  ) * 100
+                );
+
+
+              progressBarFill.style.width =
+                percentComplete + "%";
+
+
+              progressPercent.innerText =
+                percentComplete + "%";
+
+
+              if (
+                percentComplete === 100
+              ) {
+
+                progressStatus.innerText =
+                  "⚡ Découpage et conversion vidéo en cours...";
+
+
+                progressPercent.innerText =
+                  "Traitement";
+
+
+                progressBarFill.classList.add(
+                  "processing"
+                );
+              }
+            }
+          };
+
+
+        // --------------------------------------------------
+        // RÉPONSE
+        // --------------------------------------------------
+
+        xhr.onload =
+          () => {
+
+            submitBtn.disabled =
+              false;
+
+
+            progressWrapper.style.display =
+              "none";
+
+
+            if (
+              xhr.status === 200
+            ) {
+
+              const blob =
+                xhr.response;
+
+
+              const downloadUrl =
+                URL.createObjectURL(
+                  blob
+                );
+
+
+              const a =
+                document.createElement(
+                  "a"
+                );
+
+
+              a.href =
+                downloadUrl;
+
+
+              a.download =
+                `extraits_${duration}s.zip`;
+
+
+              document.body.appendChild(
+                a
+              );
+
+
+              a.click();
+
+
+              a.remove();
+
+
+              URL.revokeObjectURL(
+                downloadUrl
+              );
+
+
+              showAlert(
+                "🎉 Découpage réussi ! Le fichier s'est téléchargé.",
+                "success"
+              );
+
+
+            } else {
+
+              const reader =
+                new FileReader();
+
+
+              reader.onload =
+                () => {
+
+                  try {
+
+                    const errObj =
+                      JSON.parse(
+                        reader.result
+                      );
+
+
+                    showAlert(
+                      "Erreur : "
+                      + (
+                        errObj.detail
+                        || "Échec du découpage."
+                      ),
+                      "error"
+                    );
+
+
+                  } catch {
+
+                    showAlert(
+                      "Une erreur serveur est survenue.",
+                      "error"
+                    );
+                  }
+                };
+
+
+              reader.readAsText(
+                xhr.response
+              );
+            }
+          };
+
+
+        // --------------------------------------------------
+        // ERREUR
+        // --------------------------------------------------
+
+        xhr.onerror =
+          () => {
+
+            submitBtn.disabled =
+              false;
+
+
+            progressWrapper.style.display =
+              "none";
+
+
+            showAlert(
+              "Erreur de connexion avec le serveur.",
+              "error"
+            );
+          };
+
+
+        // --------------------------------------------------
+        // ENVOI
+        // --------------------------------------------------
+
+        xhr.send(
+          formData
+        );
+
+      }
+    );
+
+
+  // ========================================================
+  // ALERT
+  // ========================================================
+
+  function showAlert(
+    msg,
+    type
+  ) {
+
+    const statusAlert =
+      document.getElementById(
+        "statusAlert"
+      );
+
+
+    statusAlert.className =
+      `status-alert ${type}`;
+
+
+    statusAlert.innerText =
+      msg;
+
+
+    statusAlert.style.display =
+      "block";
+  }
+
+</script>
+
+</body>
+</html>
