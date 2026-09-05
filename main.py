@@ -1,6 +1,7 @@
 import os
 import subprocess
 import shutil
+import uuid
 from fastapi import FastAPI, File, Form, UploadFile, Header, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -101,29 +102,36 @@ async def cut_video(
 
     vf_arg = ",".join(filter_chains) if filter_chains else None
 
-    # 4. Découpage de l'extrait
-    start_temp_sec = start_min * 60
-    output_filename = "extrait_1.mp4"
-    output_filepath = os.path.join(output_dir, output_filename)
+    # 4. Découpage des extraits en boucle selon max_clips avec ID unique
+    unique_id = str(uuid.uuid4())[:8]
+    start_sec = start_min * 60
+    output_files = []
 
-    cmd = ["ffmpeg", "-y", "-ss", str(start_temp_sec), "-i", input_path, "-t", str(segment_duration)]
-    
-    if vf_arg:
-        cmd.extend(["-vf", vf_arg])
-    
-    cmd.extend(["-c:v", "libx264", "-preset", "fast", "-c:a", "aac", output_filepath])
+    for i in range(1, max_clips + 1):
+        current_start_sec = start_sec + ((i - 1) * segment_duration)
+        output_filename = f"extrait_{i}_{unique_id}.mp4"
+        output_filepath = os.path.join(output_dir, output_filename)
 
-    try:
-        subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"Erreur FFmpeg : {e}")
+        cmd = ["ffmpeg", "-y", "-ss", str(current_start_sec), "-i", input_path, "-t", str(segment_duration)]
+        
+        if vf_arg:
+            cmd.extend(["-vf", vf_arg])
+        
+        cmd.extend(["-c:v", "libx264", "-preset", "fast", "-c:a", "aac", output_filepath])
 
-    # 5. Compresser le résultat en ZIP
-    zip_filename = "extraits_shorts.zip"
+        try:
+            subprocess.run(cmd, check=True)
+            output_files.append((output_filepath, output_filename))
+        except subprocess.CalledProcessError as e:
+            print(f"Erreur FFmpeg pour l'extrait {i} : {e}")
+
+    # 5. Compresser tous les extraits générés dans le ZIP
+    zip_filename = f"extraits_shorts_{unique_id}.zip"
     zip_path = os.path.join(output_dir, zip_filename)
     with zipfile.ZipFile(zip_path, 'w') as zipf:
-        if os.path.exists(output_filepath):
-            zipf.write(output_filepath, arcname=output_filename)
+        for file_path, arc_name in output_files:
+            if os.path.exists(file_path):
+                zipf.write(file_path, arcname=arc_name)
 
     # Nettoyage des fichiers temporaires sources et srt
     if os.path.exists(input_path):
