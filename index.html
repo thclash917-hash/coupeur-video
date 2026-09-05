@@ -398,6 +398,26 @@
         </div>
       </div>
 
+      <!-- NOUVEAU : Format d'image & Qualité -->
+      <div class="form-row form-group">
+        <div>
+          <label for="aspectRatio">Format d'image</label>
+          <select id="aspectRatio">
+            <option value="original" selected>📺 Original</option>
+            <option value="9:16">📱 Vertical 9:16</option>
+          </select>
+        </div>
+        <div>
+          <label for="quality">Qualité / Résolution</label>
+          <select id="quality">
+            <option value="original" selected>✨ Originale</option>
+            <option value="720p">⚡ HD 720p</option>
+            <option value="1080p">🎥 Full HD 1080p</option>
+            <option value="4k">🌟 4K Ultra HD</option>
+          </select>
+        </div>
+      </div>
+
       <div class="form-row form-group">
         <div>
           <label for="duration">Durée de l'extrait</label>
@@ -469,7 +489,6 @@
   function handleCredentialResponse(response) {
     const user = parseJwt(response.credential);
     localStorage.setItem("user_token", response.credential);
-    
     showLoggedInState(user);
   }
 
@@ -520,6 +539,9 @@
     const maxClips = document.getElementById("maxClips").value;
     const startMin = document.getElementById("startMin").value;
     const endMin = document.getElementById("endMin").value;
+    const aspectRatio = document.getElementById("aspectRatio").value;
+    const quality = document.getElementById("quality").value;
+
     const submitBtn = document.getElementById("submitBtn");
     const progressWrapper = document.getElementById("progressWrapper");
     const progressStatus = document.getElementById("progressStatus");
@@ -538,6 +560,8 @@
     formData.append("max_clips", maxClips);
     formData.append("start_min", startMin);
     formData.append("end_min", endMin);
+    formData.append("aspect_ratio", aspectRatio);
+    formData.append("quality", quality);
 
     // Reinitialisation des vues
     statusAlert.style.display = "none";
@@ -561,7 +585,7 @@
         progressPercent.innerText = percentComplete + "%";
 
         if (percentComplete === 100) {
-          progressStatus.innerText = "⚡ Découpage vidéo en cours (FFmpeg)...";
+          progressStatus.innerText = "⚡ Découpage et conversion vidéo en cours...";
           progressPercent.innerText = "Traitement";
           progressBarFill.classList.add("processing");
         }
