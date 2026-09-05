@@ -217,7 +217,7 @@
       gap: 14px;
     }
 
-    select, input[type="number"] {
+    select, input[type="number"], input[type="password"] {
       width: 100%;
       padding: 12px 14px;
       background: var(--input-bg);
@@ -229,7 +229,7 @@
       transition: border-color 0.2s;
     }
 
-    select:focus, input[type="number"]:focus {
+    select:focus, input[type="number"]:focus, input[type="password"]:focus {
       border-color: var(--input-focus);
       box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
     }
@@ -455,6 +455,15 @@
       <button type="submit" class="btn-submit" id="submitBtn">✂️ Lancer le découpage</button>
     </form>
 
+    <!-- Zone Admin / Nettoyage -->
+    <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--card-border);">
+      <label style="color: #f43f5e; margin-bottom: 8px;">⚙️ Maintenance Serveur (Admin)</label>
+      <div style="display: flex; gap: 10px;">
+        <input type="password" id="adminToken" placeholder="Mot de passe admin" style="flex: 1;">
+        <button type="button" onclick="cleanServer()" style="background: #ef4444; border: none; border-radius: 12px; color: white; padding: 0 16px; font-weight: 700; cursor: pointer; transition: background 0.2s; white-space: nowrap;">🧹 Vider</button>
+      </div>
+    </div>
+
     <!-- Section barre de progression -->
     <div class="progress-wrapper" id="progressWrapper">
       <div class="progress-info">
@@ -472,6 +481,7 @@
 
 <script>
   const API_URL = "https://coupeur-video.onrender.com/cut";
+  const CLEAN_URL = "https://coupeur-video.onrender.com/clean";
 
   const fileInput = document.getElementById("videoFile");
   const fileNameDisplay = document.getElementById("fileNameDisplay");
@@ -539,7 +549,34 @@
     }
   });
 
-  // Gestion du Formulaire
+  // Fonction pour vider le serveur (Admin)
+  async function cleanServer() {
+    const token = document.getElementById("adminToken").value;
+    if (!token) {
+      showAlert("Entre ton mot de passe admin pour nettoyer.", "error");
+      return;
+    }
+
+    try {
+      const response = await fetch(CLEAN_URL, {
+        method: "POST",
+        headers: {
+          "x-admin-token": token
+        }
+      });
+      
+      const data = await response.json();
+      if (response.ok) {
+        showAlert("✨ " + data.status, "success");
+      } else {
+        showAlert("Erreur : " + (data.detail || "Accès refusé"), "error");
+      }
+    } catch (err) {
+      showAlert("Erreur de connexion avec le serveur.", "error");
+    }
+  }
+
+  // Gestion du Formulaire de découpe
   document.getElementById("cutForm").addEventListener("submit", (e) => {
     e.preventDefault();
 
@@ -549,7 +586,7 @@
     const endMin = document.getElementById("endMin").value;
     const aspectRatio = document.getElementById("aspectRatio").value;
     const quality = document.getElementById("quality").value;
-    const addSubs = document.getElementById("addSubs").checked; // Récupération de la case
+    const addSubs = document.getElementById("addSubs").checked;
 
     const submitBtn = document.getElementById("submitBtn");
     const progressWrapper = document.getElementById("progressWrapper");
@@ -571,9 +608,8 @@
     formData.append("end_min", endMin);
     formData.append("aspect_ratio", aspectRatio);
     formData.append("quality", quality);
-    formData.append("add_subs", addSubs ? "true" : "false"); // Envoi au serveur
+    formData.append("add_subs", addSubs ? "true" : "false");
 
-    // Reinitialisation des vues
     statusAlert.style.display = "none";
     progressWrapper.style.display = "block";
     progressBarFill.classList.remove("processing");
@@ -582,12 +618,10 @@
     progressStatus.innerText = "📤 Téléversement de la vidéo...";
     submitBtn.disabled = true;
 
-    // Utilisation de XMLHttpRequest pour suivre la progression de l'upload
     const xhr = new XMLHttpRequest();
     xhr.open("POST", API_URL, true);
     xhr.responseType = "blob";
 
-    // 1. Progression du téléversement du fichier (client -> serveur)
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) {
         const percentComplete = Math.round((event.loaded / event.total) * 100);
@@ -602,7 +636,6 @@
       }
     };
 
-    // 2. Traitement du retour serveur
     xhr.onload = () => {
       submitBtn.disabled = false;
       progressWrapper.style.display = "none";
@@ -619,7 +652,6 @@
 
         showAlert("🎉 Découpage réussi ! Le fichier s'est téléchargé.", "success");
       } else {
-        // En cas d'erreur serveur
         const reader = new FileReader();
         reader.onload = () => {
           try {
