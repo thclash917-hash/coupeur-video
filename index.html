@@ -54,7 +54,8 @@
         document.getElementById('cutForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const status = document.getElementById('status');
-            status.innerText = "Traitement en cours... Merci de patienter.";
+            status.style.color = "#007bff";
+            status.innerText = "Découpage et téléchargement en cours... Merci de patienter.";
 
             const payload = {
                 url: document.getElementById('url').value,
@@ -64,27 +65,30 @@
             };
 
             try {
-                // Remplacez cette URL après avoir déployé votre backend sur Render.com
                 const response = await fetch('https://coupeur-video.onrender.com/cut', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
 
-               if (!response.ok) throw new Error("Erreur lors de la découpe");
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => null);
+                    throw new Error(errData?.detail || "Erreur lors de la découpe");
+                }
 
-const blob = await response.blob();
-const downloadUrl = window.URL.createObjectURL(blob);
-const a = document.createElement('a');
-a.href = downloadUrl;
-a.download = "extrait.mp4";
-document.body.appendChild(a);
-a.click();
-a.remove();
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = "extrait.mp4";
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
 
-status.innerText = "Téléchargement terminé !";
+                status.innerText = "Téléchargement terminé !";
             } catch (err) {
-                status.innerText = "Erreur de connexion avec le serveur.";
+                status.style.color = "red";
+                status.innerText = "Erreur : " + err.message;
             }
         });
     </script>
