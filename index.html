@@ -1616,10 +1616,6 @@
         );
 
 
-        xhr.responseType =
-          "blob";
-
-
         // --------------------------------------------------
         // PROGRESSION UPLOAD
         // --------------------------------------------------
@@ -1672,111 +1668,55 @@
         // RÉPONSE
         // --------------------------------------------------
 
-        xhr.onload =
-          () => {
+       xhr.onload = () => {
+    submitBtn.disabled = false;
+    progressWrapper.style.display = "none";
 
-            submitBtn.disabled =
-              false;
+    if (xhr.status === 200) {
+        try {
+            const data = JSON.parse(xhr.responseText);
+            const jobId = data.job_id;
 
+            const statusDiv = document.getElementById("downloadStatus") || document.querySelector("#statusMessage");
+            if (statusDiv) statusDiv.innerText = "Traitement en cours par le serveur...";
 
-            progressWrapper.style.display =
-              "none";
-
-
-            if (
-              xhr.status === 200
-            ) {
-
-              const blob =
-                xhr.response;
-
-
-              const downloadUrl =
-                URL.createObjectURL(
-                  blob
-                );
-
-
-              const a =
-                document.createElement(
-                  "a"
-                );
-
-
-              a.href =
-                downloadUrl;
-
-
-              a.download =
-                `extraits_${duration}s.zip`;
-
-
-              document.body.appendChild(
-                a
-              );
-
-
-              a.click();
-
-
-              a.remove();
-
-
-              URL.revokeObjectURL(
-                downloadUrl
-              );
-
-
-              showAlert(
-                "🎉 Découpage réussi ! Le fichier s'est téléchargé.",
-                "success"
-              );
-
-
-            } else {
-
-              const reader =
-                new FileReader();
-
-
-              reader.onload =
-                () => {
-
-                  try {
-
-                    const errObj =
-                      JSON.parse(
-                        reader.result
-                      );
-
-
-                    showAlert(
-                      "Erreur : "
-                      + (
-                        errObj.detail
-                        || "Échec du découpage."
-                      ),
-                      "error"
-                    );
-
-
-                  } catch {
-
-                    showAlert(
-                      "Une erreur serveur est survenue.",
-                      "error"
-                    );
-                  }
-                };
-
-
-              reader.readAsText(
-                xhr.response
-              );
+            function checkJobStatus() {
+                fetch(`https://coupeur-video.onrender.com/status/${jobId}`)
+                    .then(res => res.json())
+                    .then(statusData => {
+                        if (statusData.status === "completed") {
+                            if (statusDiv) statusDiv.innerText = "Découpage réussi ! Téléchargement en cours...";
+                            window.location.href = `https://coupeur-video.onrender.com/download/${jobId}`;
+                        } else if (statusData.status === "failed") {
+                            const errorMsg = statusData.error || "Échec du traitement";
+                            if (statusDiv) statusDiv.innerText = "Erreur : " + errorMsg;
+                            showAlert("Erreur : " + errorMsg, "error");
+                        } else {
+                            setTimeout(checkJobStatus, 2000);
+                        }
+                    })
+                    .catch(() => {
+                        setTimeout(checkJobStatus, 2000);
+                    });
             }
-          };
+
+            checkJobStatus();
+
+        } catch (e) {
+            showAlert("Erreur lors de la lecture de la réponse du serveur.", "error");
+        }
+    } else {
+        try {
+            const errObj = JSON.parse(xhr.responseText);
+            showAlert("Erreur : " + (errObj.detail || "Échec du découpage."), "error");
+        } catch (err) {
+            showAlert("Erreur lors de l'envoi de la vidéo au serveur.", "error");
+        }
+    }
+};
 
 
+                
         // --------------------------------------------------
         // ERREUR
         // --------------------------------------------------
