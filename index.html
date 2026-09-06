@@ -1619,12 +1619,6 @@
         xhr.responseType =
           "blob";
 
-        // Ajoute ces lignes ici :
-const savedToken = localStorage.getItem("user_token");
-if (savedToken) {
-  xhr.setRequestHeader("Authorization", "Bearer " + savedToken);
-}
-
 
         // --------------------------------------------------
         // PROGRESSION UPLOAD
